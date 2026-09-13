@@ -13,11 +13,7 @@ difficulty: 1
 
 reward:
   shaping_scale: 0.25
-  preference: 3.0
-  budget: 1.5
-  quality: 1.5
-  convenience: 1.0
-  recovery: 2.0
+  utility: 7.5
   step_cost: 0.01
   invalid_action: 0.25
   incomplete_finish: 3.0

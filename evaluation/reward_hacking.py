@@ -33,11 +33,7 @@ REWARD_COMPONENTS = (
     "potential_shaping",
     "invalid_action",
     "terminal_failure",
-    "preference",
-    "budget",
-    "quality",
-    "convenience",
-    "recovery",
+    "client_utility",
 )
 
 
@@ -68,6 +64,9 @@ def run_episode(
         "spend": info["spent"],
         "quality": info["quality"],
         "preference": info["preference_match"],
+        "client_utility": env.reward_model.latent_utility(env.state),
+        "budget_score": info["budget_score"],
+        "convenience": info["convenience"],
         "refundable_share": info["refundable_share"],
         "sunk_fraction": info["sunk_cost_fraction"],
     }

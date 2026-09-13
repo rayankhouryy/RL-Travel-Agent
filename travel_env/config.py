@@ -10,11 +10,7 @@ import yaml
 @dataclass(frozen=True)
 class RewardWeights:
     shaping_scale: float = 0.25
-    preference: float = 3.0
-    budget: float = 1.5
-    quality: float = 1.5
-    convenience: float = 1.0
-    recovery: float = 2.0
+    utility: float = 7.5
     step_cost: float = 0.01
     invalid_action: float = 0.25
     incomplete_finish: float = 3.0

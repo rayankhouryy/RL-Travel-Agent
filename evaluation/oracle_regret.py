@@ -119,12 +119,24 @@ def evaluate_regret(
         successes.append(float(success))
 
     regrets = np.asarray(oracle_values) - np.asarray(agent_values)
+    success_mask = np.asarray(successes, dtype=bool)
+    failure_mask = ~success_mask
     return {
         "oracle_utility": float(np.mean(oracle_values)),
         "agent_utility": float(np.mean(agent_values)),
         "mean_regret": float(np.mean(regrets)),
         "median_regret": float(np.median(regrets)),
         "p90_regret": float(np.quantile(regrets, 0.90)),
+        "successful_mean_regret": (
+            float(np.mean(regrets[success_mask]))
+            if np.any(success_mask)
+            else float("nan")
+        ),
+        "unsuccessful_mean_regret": (
+            float(np.mean(regrets[failure_mask]))
+            if np.any(failure_mask)
+            else float("nan")
+        ),
         "agent_success": float(np.mean(successes)),
     }
 
@@ -161,4 +173,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

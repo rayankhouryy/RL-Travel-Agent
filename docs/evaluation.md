@@ -10,13 +10,13 @@ while random interaction does not:
 
 | Metric | Random | Heuristic |
 |---|---:|---:|
-| Success | 0.00 | 1.00 |
-| Reward | -0.858 | 5.333 |
-| Realized satisfaction | 0.293 | 0.652 |
-| Preference match | 0.210 | 0.346 |
-| Quality | 0.506 | 0.729 |
-| Mean steps | 38.25 | 14.13 |
-| Invalid actions | 1.66 | 0.00 |
+| Success | 0.00 | 0.99 |
+| Reward | -0.880 | 4.924 |
+| Realized satisfaction | 0.284 | 0.654 |
+| Preference match | 0.223 | 0.355 |
+| Quality | 0.476 | 0.724 |
+| Mean steps | 38.70 | 14.24 |
+| Invalid actions | 1.70 | 0.00 |
 
 Command:
 
@@ -30,12 +30,12 @@ At difficulty 3:
 
 | Policy | Reward | Success | Realized | Spend | Quality | Refundable share | Sunk fraction |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Random | -1.426 | 0.00 | 0.146 | 2747 | 0.497 | 0.501 | 0.094 |
-| Cheapest | 4.508 | 0.90 | 0.514 | 2145 | 0.399 | 0.354 | 0.009 |
-| Quality maximizer | 5.434 | 0.93 | 0.565 | 3180 | 0.725 | 0.404 | 0.011 |
-| Non-refundable | 5.806 | 0.98 | 0.548 | 2968 | 0.644 | 0.059 | 0.017 |
-| Flexibility buyer | 5.494 | 0.96 | 0.585 | 3039 | 0.604 | 0.870 | 0.000 |
-| Heuristic | 5.588 | 0.93 | 0.569 | 3150 | 0.643 | 0.422 | 0.009 |
+| Random | -1.431 | 0.00 | 0.141 | 2744 | 0.499 | 0.500 | 0.095 |
+| Cheapest | 3.452 | 0.84 | 0.510 | 2119 | 0.394 | 0.368 | 0.007 |
+| Quality maximizer | 4.228 | 0.92 | 0.566 | 3206 | 0.722 | 0.416 | 0.012 |
+| Non-refundable | 4.386 | 0.94 | 0.548 | 2975 | 0.641 | 0.065 | 0.018 |
+| Flexibility buyer | 4.148 | 0.92 | 0.576 | 3035 | 0.599 | 0.894 | 0.001 |
+| Heuristic | 4.467 | 0.93 | 0.574 | 3150 | 0.646 | 0.410 | 0.009 |
 
 Spearman correlation between reward rank and realized-outcome rank was `0.600`.
 
@@ -43,11 +43,11 @@ The paired 200-episode flexibility-minus-non-refundable probe found:
 
 | Metric | Mean difference | Approximate 95% CI half-width |
 |---|---:|---:|
-| Reward | -0.0169 | 0.3028 |
-| Realized satisfaction | +0.0379 | 0.0220 |
-| Sunk-cost fraction | -0.0187 | 0.0027 |
-| Refundable share | +0.7847 | 0.0314 |
-| Spend | +179.80 | 68.01 |
+| Reward | -0.1172 | 0.2650 |
+| Realized satisfaction | +0.0361 | 0.0215 |
+| Sunk-cost fraction | -0.0203 | 0.0030 |
+| Refundable share | +0.7617 | 0.0332 |
+| Spend | +186.22 | 69.04 |
 
 Reward does not clearly prefer flexibility, while realized satisfaction and
 sunk loss do.
@@ -58,11 +58,11 @@ Ten independently spaced blocks of 50 paired episodes produced:
 
 | Metric | Mean block delta | Between-block standard deviation | Positive blocks |
 |---|---:|---:|---:|
-| Reward | -0.3198 | 0.2037 | 0% |
-| Realized satisfaction | +0.0284 | 0.0129 | 100% |
-| Sunk-cost fraction | -0.0155 | 0.0035 | 0% |
-| Success | -0.0280 | 0.0253 | 10% |
-| Spend | +134.85 | 61.15 | 100% |
+| Reward | -0.2305 | 0.1846 | 10% |
+| Realized satisfaction | +0.0341 | 0.0140 | 100% |
+| Sunk-cost fraction | -0.0150 | 0.0032 | 0% |
+| Success | -0.0220 | 0.0319 | 10% |
+| Spend | +142.60 | 63.08 | 100% |
 
 For sunk-cost fraction, zero positive blocks means all ten blocks favored
 flexibility through lower sunk loss.
@@ -71,17 +71,15 @@ Reward-component deltas explain the aggregate difference:
 
 | Component | Flexibility minus non-refundable |
 |---|---:|
-| Persona-dependent preference | -0.0963 |
-| Budget | -0.0629 |
-| Quality | -0.0751 |
-| Convenience | -0.0258 |
-| Recovery | -0.0200 |
-| Failed-finish penalty | -0.0330 |
-| Step cost and shaping | -0.0066 |
+| Client utility | -0.1916 |
+| Failed-finish penalty | -0.0360 |
+| Step cost and shaping | -0.0029 |
 
 The flexibility policy pays an ex-ante premium and accepts somewhat weaker
 inventory on the training objective. The separately implemented outcome score
-values its lower sunk loss and stronger post-disruption robustness.
+values its lower sunk loss and stronger post-disruption robustness. The
+`0.2305` reward difference is `4.66%` of the non-refundable policy's mean
+successful terminal utility (`4.9420`).
 
 Command:
 
@@ -96,7 +94,7 @@ python -m evaluation.multiseed \
 
 The curriculum increases hidden information, required activity coverage,
 scarcity, disruption count, and recovery horizon. Earlier fixed-seed evaluation
-showed success decreasing from 100% at level 1 to 65% at level 4,
+showed success decreasing from 98% at level 1 to 60% at level 4,
 while rebooking requirements rose and mask-following invalid actions remained
 zero.
 
@@ -165,12 +163,14 @@ Across 50 difficulty-2 episodes:
 
 | Metric | Value |
 |---|---:|
-| Oracle utility | 0.7628 |
-| Heuristic utility | 0.7165 |
-| Mean regret | 0.0463 |
-| Median regret | 0.0355 |
-| 90th-percentile regret | 0.1135 |
-| Heuristic success | 1.0000 |
+| Oracle utility | 0.7136 |
+| Heuristic utility | 0.6794 |
+| Mean regret, all episodes | 0.0342 |
+| Mean regret, successful episodes | 0.0325 |
+| Mean regret, unsuccessful episodes | 0.0611 |
+| Median regret | 0.0254 |
+| 90th-percentile regret | 0.0737 |
+| Heuristic success | 0.9400 |
 
 Command:
 
@@ -184,7 +184,29 @@ python -m evaluation.oracle_regret \
   --difficulty 4
 ```
 
-At difficulty 4, a 20-episode run increases mean regret to `0.0673`, the
-90th-percentile regret to `0.1490`, and reduces heuristic success to `0.55`.
-This provides clearer learning headroom on the hidden-preference setting while
-remaining explicit that the oracle is exact only under its fixed-slot scope.
+At difficulty 4, a 20-episode run reports `0.0492` mean regret over all
+episodes, `0.0448` on successes, `0.0558` on failures, and `0.60` heuristic
+success. No failed episodes are dropped from the headline regret.
+
+The oracle measures item selection under a fixed slot structure. It does not
+optimize when to ask questions, propose, or sequence recovery. The modest
+selection regret therefore says that the heuristic is strong at item choice;
+the falling success rate identifies interaction policy as the larger source of
+learning headroom.
+
+## Persona-dependent optimal choices
+
+For 25 fixed difficulty-2 worlds, four independently sampled latent personas
+were evaluated against the same inventory, request, and hard-budget
+flexibility. The exact utility-maximizing itinerary changed in all 25 worlds,
+with `3.72` distinct optima per four personas on average.
+
+```bash
+python -m evaluation.persona_sensitivity \
+  --worlds 25 \
+  --personas-per-world 4 \
+  --difficulty 2
+```
+
+This demonstrates that hidden client preferences change the selection
+objective itself rather than only changing the acceptance gate.

@@ -17,6 +17,10 @@ METRICS = (
     "sunk_fraction",
     "success",
     "spend",
+    "client_utility",
+    "budget_score",
+    "quality",
+    "convenience",
     *(f"component_{name}" for name in REWARD_COMPONENTS),
 )
 

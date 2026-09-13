@@ -6,6 +6,7 @@ from policies import HeuristicPolicy
 from travel_env import TravelAgentEnv
 from travel_env.actions import ActionType
 from travel_env.config import EnvironmentConfig
+from travel_env.models import InventoryCategory
 
 
 def discounted_trace(config, seed):
@@ -69,6 +70,24 @@ def test_terminal_transition_applies_final_shaping_term():
     assert reward == pytest.approx(
         sum(info["reward_components"].values())
     )
+
+
+def test_time_limit_truncation_has_no_completion_failure_penalty():
+    env = TravelAgentEnv(EnvironmentConfig(disruption_probability=0.0))
+    observation, _ = env.reset(seed=308, options={"difficulty": 1})
+    env.state.step_limit = 1
+
+    _, _, terminated, truncated, info = env.step(
+        {
+            "action_type": int(ActionType.SEARCH_FLIGHTS),
+            "source_index": 0,
+            "target_index": 0,
+        }
+    )
+
+    assert not terminated
+    assert truncated
+    assert "terminal_failure" not in info["reward_components"]
 
 
 def test_realized_satisfaction_is_held_out(monkeypatch):
@@ -147,6 +166,8 @@ def test_successful_terminal_reward_excludes_structural_invariants():
     components = env.reward_model.terminal_components(env.state)
     assert "coherence" not in components
     assert "violations" not in components
+    assert "recovery" not in components
+    assert set(components) == {"client_utility"}
 
 
 def test_terminal_preference_reward_depends_on_hidden_persona():
@@ -162,10 +183,40 @@ def test_terminal_preference_reward_depends_on_hidden_persona():
     env.state.persona.quality_preference = 0.1
     low_quality_priority = env.reward_model.terminal_components(
         env.state
-    )["preference"]
+    )["client_utility"]
     env.state.persona.quality_preference = 3.0
     high_quality_priority = env.reward_model.terminal_components(
         env.state
-    )["preference"]
+    )["client_utility"]
 
     assert high_quality_priority != low_quality_priority
+
+
+def test_latent_utility_uses_quality_floor_and_preferred_pace():
+    env = TravelAgentEnv(EnvironmentConfig(disruption_probability=0.0))
+    policy = HeuristicPolicy()
+    observation, _ = env.reset(seed=309, options={"difficulty": 1})
+    terminated = truncated = False
+    while not (terminated or truncated):
+        observation, _, terminated, truncated, _ = env.step(
+            policy.act(observation)
+        )
+
+    qualities = [item.quality for item in env.state.booked_items()]
+    actual_pace = (
+        len(env.state.items_by_category(InventoryCategory.ACTIVITY))
+        / env.state.request.duration_days
+    )
+
+    env.state.persona.quality_floor = min(qualities)
+    env.state.persona.preferred_pace = actual_pace
+    matched = env.reward_model.latent_utility(env.state)
+
+    env.state.persona.quality_floor = min(1.0, min(qualities) + 0.25)
+    floor_mismatch = env.reward_model.latent_utility(env.state)
+    env.state.persona.quality_floor = min(qualities)
+    env.state.persona.preferred_pace = actual_pace + 2.0
+    pace_mismatch = env.reward_model.latent_utility(env.state)
+
+    assert floor_mismatch < matched
+    assert pace_mismatch < matched

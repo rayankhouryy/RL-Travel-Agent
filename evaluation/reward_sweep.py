@@ -2,29 +2,14 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
-from dataclasses import replace
 from typing import Dict
 
 from policies import HeuristicPolicy
 from travel_env import TravelAgentEnv
-from travel_env.config import EnvironmentConfig, RewardWeights
+from travel_env.config import EnvironmentConfig
 
 
-PROFILES = {
-    "budget": RewardWeights(
-        preference=1.0,
-        budget=5.0,
-        quality=1.0,
-        convenience=1.0,
-    ),
-    "balanced": RewardWeights(),
-    "experience": RewardWeights(
-        preference=5.0,
-        budget=1.0,
-        quality=3.0,
-        convenience=2.0,
-    ),
-}
+PROFILES = ("budget", "balanced", "experience")
 
 
 def run_profile(
@@ -33,8 +18,7 @@ def run_profile(
     episodes: int,
     seed: int,
 ) -> Dict[str, float]:
-    config = replace(base_config, reward=PROFILES[name])
-    env = TravelAgentEnv(config)
+    env = TravelAgentEnv(base_config)
     policy = HeuristicPolicy(profile=name)
     totals = defaultdict(float)
 

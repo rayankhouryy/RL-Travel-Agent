@@ -70,13 +70,8 @@ class RewardModel:
 
     def terminal_components(self, state: TravelState) -> Dict[str, float]:
         weights = self.config.reward
-        metrics = self.itinerary_metrics(state)
         return {
-            "preference": weights.preference * self.latent_utility(state),
-            "budget": weights.budget * metrics["budget_score"],
-            "quality": weights.quality * metrics["quality"],
-            "convenience": weights.convenience * metrics["convenience"],
-            "recovery": weights.recovery * metrics["recovery"],
+            "client_utility": weights.utility * self.latent_utility(state),
         }
 
     def itinerary_metrics(self, state: TravelState) -> Dict[str, float]:
@@ -146,20 +141,31 @@ class RewardModel:
             if activities
             else 0.0
         )
-        quality = float(np.mean([item.quality for item in items]))
+        qualities = [item.quality for item in items]
+        quality = float(np.mean(qualities))
+        quality_shortfall = max(
+            state.persona.quality_floor - min(qualities),
+            0.0,
+        )
+        quality_fit = quality * float(np.exp(-3.0 * quality_shortfall))
         location = float(np.mean([item.location for item in items]))
         convenience = float(np.mean([item.convenience for item in items]))
         target = state.request.budget * state.persona.expected_budget_usage
         budget_fit = float(
             np.exp(-max(state.spent - target, 0.0) / max(target, 1.0))
         )
+        pace = len(activities) / max(state.request.duration_days, 1)
+        pace_fit = float(
+            np.exp(-abs(pace - state.persona.preferred_pace) / 0.65)
+        )
         values = np.array(
             [
                 min(1.0, 2.0 * theme_fit),
-                quality,
+                quality_fit,
                 location,
                 convenience,
                 budget_fit,
+                pace_fit,
             ],
             dtype=np.float64,
         )
@@ -170,6 +176,7 @@ class RewardModel:
                 state.persona.location_preference,
                 state.persona.convenience_preference,
                 state.persona.budget_sensitivity,
+                1.0,
             ],
             dtype=np.float64,
         )

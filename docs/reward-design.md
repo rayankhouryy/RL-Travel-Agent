@@ -41,7 +41,9 @@ The initial itinerary is empty, so $\Phi(s_0)=0$. With terminal potential also
 zero, changing the shaping scale does not change the discounted ordering of
 policies. The learner must use the same $\gamma$. Time-limit truncations retain
 their nonzero potential and should bootstrap rather than being treated as
-artificial terminals.
+artificial terminals. They do not receive the completion-failure penalty;
+that penalty applies to explicit invalid finish attempts and true rejection
+terminations such as exhausted client patience.
 
 ## Terminal reward
 
@@ -49,19 +51,16 @@ Successful completion receives:
 
 ```math
 R_T =
-w_pU_{\mathrm{latent}}+w_bB+w_qQ+w_vV+w_rR,
+w_uU_{\mathrm{latent}}.
 ```
 
-where:
-
-- $U_{\mathrm{latent}}$: persona-dependent latent client utility
-- $B$: budget fit
-- $Q$: quality
-- $V$: convenience
-- $R$: disruption recovery
-
-Coherence and unresolved disruption failures are enforced structurally, so they
-cannot vary on a valid successful finish and do not appear in $R_T$.
+The successful terminal objective contains no persona-independent copies of
+quality, convenience, or budget fit. Those dimensions appear once, inside the
+client-specific utility. Coherence and unresolved disruption failures are
+enforced structurally, so they cannot vary on a valid successful finish.
+Recovery quality affects final inventory utility, spending, and step cost
+rather than receiving a bonus for the exogenous fact that a disruption
+occurred.
 
 Budget fit penalizes only spending above the persona's expected target. Finding
 an equally good itinerary below the target is not penalized:
@@ -82,7 +81,9 @@ U_{\mathrm{latent}} =
 ```
 
 where the hidden persona weights theme fit, quality, location, convenience,
-and budget fit.
+budget fit, and pace. The quality dimension includes a nonlinear penalty when
+any booked item falls below the persona's quality floor. Pace compares booked
+activities per day with the persona's preferred pace.
 
 ## Separately implemented realized outcome
 
@@ -129,6 +130,9 @@ it is not included in the policy observation or reward. Tests replace each
 implementation separately and verify that reward and realized outcome remain
 isolated. The two measures are not claimed to be statistically independent:
 they evaluate the same simulated trip and intentionally share some primitives.
+The sunk-cost and unresolved-disruption factors are derived directly from
+booking and disruption records and have no corresponding terminal-utility
+component.
 
 ## Reward-hacking defenses
 
@@ -160,6 +164,7 @@ The suite checks:
 - changing realized satisfaction cannot change reward
 - changing latent utility cannot change realized satisfaction
 - hidden persona weights change successful terminal reward
+- fixed-inventory persona resampling changes the exact utility-maximizing itinerary
 - exploit policies produce measurably different behavior
 - flexibility changes held-out outcomes and sunk losses on paired worlds
 - heuristic solutions are compared with an exact fixed-slot oracle
@@ -168,10 +173,12 @@ The suite checks:
 
 Across ten seed blocks, the flexibility policy produces higher realized
 satisfaction and lower sunk loss but lower training reward. Component
-decomposition shows why: it pays more and accepts modestly lower ex-ante
-quality, budget, convenience, and latent-intent scores in exchange for
-post-disruption robustness. This is a concrete objective tradeoff rather than
-an unexplained aggregate mismatch.
+decomposition shows that the difference is entirely in client utility and
+completion rate: flexibility pays more and accepts modestly lower ex-ante
+quality, budget, and convenience in exchange for post-disruption robustness.
+The mean reward difference is `0.2305`, or `4.66%` of the non-refundable
+policy's mean successful terminal utility. This is a concrete product-objective
+tradeoff rather than an unexplained aggregate mismatch.
 
 One possible future correction is a small proposal-time robustness component.
 That change should only be accepted after rerunning the paired probe to verify

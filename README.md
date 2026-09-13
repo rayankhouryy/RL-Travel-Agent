@@ -57,13 +57,14 @@ SEARCH -> BUILD -> PROPOSE
 
 | Question | Result | Interpretation |
 |---|---:|---|
-| Does competent behavior beat random? | 100% vs 0% success | The environment separates planning competence from random interaction |
-| Does difficulty scale? | 100% to 65% heuristic success from level 1 to 4 | Harder levels require more information and recovery |
+| Does competent behavior beat random? | 99% vs 0% success | The environment separates planning competence from random interaction |
+| Does difficulty scale? | 98% to 60% heuristic success from level 1 to 4 | Harder levels require more information and recovery |
 | Are masks sound? | 0 invalid heuristic actions across curriculum evaluation | Policy-visible validity matches environment transitions |
 | Is shaping policy invariant? | Discounted-return spread below `1e-9` | Terminal potential and discounting are handled correctly |
-| Does flexibility improve outcomes? | `+0.0284` mean satisfaction across 10 seed blocks | Refundability has consistent downstream value |
-| Does reward fully price flexibility? | `-0.3198` mean reward difference | Ex-ante itinerary costs remain in tension with realized robustness |
-| How close is the heuristic to an exact fixed-slot oracle? | Mean regret `0.0463` at level 2 and `0.0673` at level 4 | Harder hidden-preference tasks retain measurable headroom |
+| Does flexibility improve outcomes? | `+0.0341` mean satisfaction across 10 seed blocks | Refundability has consistent downstream value |
+| Does reward fully price flexibility? | `-0.2305`, or 4.66% of mean successful terminal utility | The training objective underprices insurance value |
+| Do hidden preferences change the optimum? | Optimal itinerary changed in 25/25 fixed worlds | Partial observability affects selection, not only acceptance |
+| How close is the heuristic to an exact fixed-slot oracle? | Mean regret `0.0342` at level 2 and `0.0492` at level 4 | Selection is strong; interaction success still falls at higher difficulty |
 | How fast is the environment? | About `3.3k` steps/s at inventory size 32 | The Python implementation is suitable for local rollout experiments |
 
 Results are deterministic for their documented seed ranges but are not claims
@@ -187,8 +188,9 @@ transition, where $\Phi(s_T)=0$. The test suite verifies that discounted return
 is invariant across shaping scales `0.0`, `0.25`, and `1.0`. There is no
 separate booking bonus, so book/remove churn cannot create positive return.
 
-Terminal reward combines persona-dependent latent utility, one-sided budget
-fit, quality, convenience, and recovery. Coherence and unresolved failures are
+Successful terminal reward is a single weighted persona-dependent utility.
+That utility combines theme fit, quality-floor fit, location, convenience,
+one-sided budget fit, and preferred pace. Coherence and unresolved failures are
 structural validity checks rather than successful-terminal reward terms.
 Separately implemented realized satisfaction evaluates pace, quality-floor
 failures, robustness, sunk cost, and post-disruption completion. It is exposed
@@ -215,7 +217,7 @@ and expose more recovery work.
 # Random and heuristic baselines
 python -m evaluation.evaluate --policy both --episodes 200
 
-# Reward/profile behavior sweep
+# Heuristic strategy-profile sweep under one shared reward
 python -m evaluation.reward_sweep --episodes 200
 
 # Difficulty progression
@@ -242,6 +244,11 @@ python -m evaluation.benchmark \
 python -m evaluation.oracle_regret \
   --difficulty 2 \
   --episodes 50
+
+# Does the utility-maximizing itinerary change with hidden preferences?
+python -m evaluation.persona_sensitivity \
+  --worlds 25 \
+  --personas-per-world 4
 ```
 
 ## Configuration
