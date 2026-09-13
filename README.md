@@ -57,13 +57,13 @@ SEARCH -> BUILD -> PROPOSE
 
 | Question | Result | Interpretation |
 |---|---:|---|
-| Does competent behavior beat random? | 99% vs 0% success | The environment separates planning competence from random interaction |
-| Does difficulty scale? | 98% to 60% heuristic success from level 1 to 4 | Harder levels require more information and recovery |
+| Does competent behavior beat random? | 98.5% vs 0% success | The environment separates planning competence from random interaction |
+| Does difficulty scale? | 98.0% to 56.5% heuristic success from level 1 to 4 | Harder levels require more information and recovery |
 | Are masks sound? | 0 invalid heuristic actions across curriculum evaluation | Policy-visible validity matches environment transitions |
 | Is shaping policy invariant? | Discounted-return spread below `1e-9` | Terminal potential and discounting are handled correctly |
 | Does flexibility improve outcomes? | `+0.0341` mean satisfaction across 10 seed blocks | Refundability has consistent downstream value |
-| Does reward fully price flexibility? | `-0.2305`, or 4.66% of mean successful terminal utility | The training objective underprices insurance value |
-| Do hidden preferences change the optimum? | Optimal itinerary changed in 25/25 fixed worlds | Partial observability affects selection, not only acceptance |
+| Does reward fully price flexibility? | Non-refundable exceeds flexibility by `0.2305`, or 4.66% of mean successful terminal utility | The training objective underprices insurance value |
+| Do hidden preferences materially change the optimum? | Using another persona's optimum loses 14.39% utility on average | Partial observability affects selection, not only acceptance |
 | How close is the heuristic to an exact fixed-slot oracle? | Mean regret `0.0342` at level 2 and `0.0492` at level 4 | Selection is strong; interaction success still falls at higher difficulty |
 | How fast is the environment? | About `3.3k` steps/s at inventory size 32 | The Python implementation is suitable for local rollout experiments |
 
@@ -249,6 +249,11 @@ python -m evaluation.oracle_regret \
 python -m evaluation.persona_sensitivity \
   --worlds 25 \
   --personas-per-world 4
+
+# Compare successful level-4 trips with and without recovery
+python -m evaluation.recovery_analysis \
+  --episodes 500 \
+  --difficulty 4
 ```
 
 ## Configuration

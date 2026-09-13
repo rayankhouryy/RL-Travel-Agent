@@ -61,4 +61,6 @@ def test_finish_requires_complete_accepted_itinerary():
     assert not terminated
     assert not info["action_valid"]
     assert info["action_result"] == "cannot_finish_incomplete_itinerary"
-    assert reward <= -3.0
+    assert "terminal_failure" not in info["reward_components"]
+    assert info["reward_components"]["invalid_action"] < 0.0
+    assert reward > -1.0

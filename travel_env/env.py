@@ -322,11 +322,11 @@ class TravelAgentEnv(gym.Env):
     def _finish(self) -> Tuple[bool, bool, bool, str]:
         state = self._require_state()
         if not state.has_complete_itinerary():
-            return False, False, True, "cannot_finish_incomplete_itinerary"
+            return False, False, False, "cannot_finish_incomplete_itinerary"
         if not state.client_accepted:
-            return False, False, True, "client_has_not_accepted"
+            return False, False, False, "client_has_not_accepted"
         if not state.trip_completed:
-            return False, False, True, "trip_not_completed"
+            return False, False, False, "trip_not_completed"
         state.done = True
         return True, False, True, "episode_completed"
 

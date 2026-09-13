@@ -36,6 +36,13 @@ REWARD_COMPONENTS = (
     "client_utility",
 )
 
+REALIZED_COMPONENTS = (
+    "base",
+    "robustness",
+    "unresolved",
+    "sunk_cost",
+)
+
 
 def run_episode(
     config: EnvironmentConfig,
@@ -69,11 +76,21 @@ def run_episode(
         "convenience": info["convenience"],
         "refundable_share": info["refundable_share"],
         "sunk_fraction": info["sunk_cost_fraction"],
+        "disruptions": info["disruptions"],
+        "steps": info["steps"],
+        "rebookings": info["rebookings"],
     }
     result.update(
         {
             f"component_{component}": component_totals[component]
             for component in REWARD_COMPONENTS
+        }
+    )
+    realized_components = env.reward_model.realized_components(env.state)
+    result.update(
+        {
+            f"realized_{component}": realized_components[component]
+            for component in REALIZED_COMPONENTS
         }
     )
     return result
@@ -156,6 +173,7 @@ def fragility_probe(
             "refundable_share",
             "spend",
             *(f"component_{name}" for name in REWARD_COMPONENTS),
+            *(f"realized_{name}" for name in REALIZED_COMPONENTS),
         ):
             differences[metric].append(
                 flexible.get(metric, 0.0) - nonrefundable.get(metric, 0.0)

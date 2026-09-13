@@ -35,7 +35,7 @@ def test_potential_is_zero_at_reset():
     assert env.reward_model.potential(env.state) == 0.0
 
 
-def test_potential_shaping_preserves_discounted_return():
+def test_potential_shaping_preserves_discounted_return_on_nontruncated_episode():
     base = EnvironmentConfig(disruption_probability=0.0)
     returns = []
     for scale in (0.0, 0.25, 1.0):
@@ -133,6 +133,25 @@ def test_realized_satisfaction_is_independent_of_latent_utility(monkeypatch):
     )
 
     assert env.reward_model.realized_satisfaction(env.state) == baseline
+
+
+def test_realized_components_sum_to_reported_outcome():
+    env = TravelAgentEnv(EnvironmentConfig(disruption_probability=0.08))
+    policy = HeuristicPolicy()
+    observation, _ = env.reset(seed=310, options={"difficulty": 3})
+    terminated = truncated = False
+    while not (terminated or truncated):
+        observation, _, terminated, truncated, _ = env.step(
+            policy.act(observation)
+        )
+
+    components = env.reward_model.realized_components(env.state)
+    assert components["total"] == pytest.approx(
+        components["base"]
+        + components["robustness"]
+        + components["unresolved"]
+        + components["sunk_cost"]
+    )
 
 
 def test_disruption_sensitivity_increases_value_of_robustness():

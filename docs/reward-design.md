@@ -42,8 +42,9 @@ zero, changing the shaping scale does not change the discounted ordering of
 policies. The learner must use the same $\gamma$. Time-limit truncations retain
 their nonzero potential and should bootstrap rather than being treated as
 artificial terminals. They do not receive the completion-failure penalty;
-that penalty applies to explicit invalid finish attempts and true rejection
-terminations such as exhausted client patience.
+that penalty is reserved for true rejection terminations such as exhausted
+client patience. Premature `FINISH` attempts are nonterminal invalid actions
+and receive only the ordinary invalid-action and step costs.
 
 ## Terminal reward
 
@@ -164,7 +165,7 @@ The suite checks:
 - changing realized satisfaction cannot change reward
 - changing latent utility cannot change realized satisfaction
 - hidden persona weights change successful terminal reward
-- fixed-inventory persona resampling changes the exact utility-maximizing itinerary
+- transferring one persona's optimum to another produces measurable utility loss
 - exploit policies produce measurably different behavior
 - flexibility changes held-out outcomes and sunk losses on paired worlds
 - heuristic solutions are compared with an exact fixed-slot oracle
@@ -186,3 +187,15 @@ that it closes the gap without making refundability universally optimal.
 Any such component must use ex-ante information such as refundability,
 cancellation penalties, and estimated risk rather than privileged knowledge of
 future disruptions.
+
+The realized-outcome difference is also decomposed rather than treated as a
+single opaque number. Flexibility minus non-refundable contributes:
+
+- `-0.0145` from the base itinerary outcome
+- `+0.0364` from the explicit robustness term
+- `+0.0000` from unresolved disruptions
+- `+0.0122` from lower sunk-cost damage
+
+The explicit robustness term is the largest contributor by design. The
+record-derived sunk-cost improvement is the additional effect not directly
+encoded by that term.

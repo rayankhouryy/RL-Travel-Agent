@@ -23,3 +23,7 @@ def test_persona_sensitivity_metrics_are_bounded():
     assert 0.0 <= result["changed_world_fraction"] <= 1.0
     assert 1.0 <= result["mean_unique_argmax"] <= 3.0
     assert 1.0 <= result["max_unique_argmax"] <= 3.0
+    assert result["mean_cross_persona_loss"] >= 0.0
+    assert result["median_cross_persona_loss"] >= 0.0
+    assert result["p90_cross_persona_loss"] >= 0.0
+    assert result["relative_cross_persona_loss"] >= 0.0

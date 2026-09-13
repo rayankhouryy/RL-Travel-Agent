@@ -6,7 +6,11 @@ from typing import Dict, List
 
 import numpy as np
 
-from evaluation.reward_hacking import REWARD_COMPONENTS, run_episode
+from evaluation.reward_hacking import (
+    REALIZED_COMPONENTS,
+    REWARD_COMPONENTS,
+    run_episode,
+)
 from policies import FlexibilityBuyerPolicy, NonRefundablePolicy
 from travel_env.config import EnvironmentConfig
 
@@ -22,6 +26,7 @@ METRICS = (
     "quality",
     "convenience",
     *(f"component_{name}" for name in REWARD_COMPONENTS),
+    *(f"realized_{name}" for name in REALIZED_COMPONENTS),
 )
 
 

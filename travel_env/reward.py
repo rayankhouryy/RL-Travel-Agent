@@ -189,8 +189,17 @@ class RewardModel:
         )
 
     def realized_satisfaction(self, state: TravelState) -> float:
+        return self.realized_components(state)["total"]
+
+    def realized_components(self, state: TravelState) -> Dict[str, float]:
         if not state.has_complete_itinerary():
-            return 0.0
+            return {
+                "base": 0.0,
+                "robustness": 0.0,
+                "unresolved": 0.0,
+                "sunk_cost": 0.0,
+                "total": 0.0,
+            }
         items = state.booked_items()
         activities = [
             item for item in items if item.category == InventoryCategory.ACTIVITY
@@ -242,18 +251,26 @@ class RewardModel:
             0.0,
             1.0 - 1.5 * state.sunk_cost / max(state.hard_budget(), 1.0),
         )
-        return float(
+        base = float(np.clip(0.85 * outcome, 0.0, 1.0))
+        protected = float(
             np.clip(
-                0.85 * outcome
+                base
                 + 0.15
                 * robustness
                 * state.persona.disruption_sensitivity,
                 0.0,
                 1.0,
             )
-            * disruption_factor
-            * sunk_loss_factor
         )
+        after_unresolved = protected * disruption_factor
+        total = after_unresolved * sunk_loss_factor
+        return {
+            "base": base,
+            "robustness": protected - base,
+            "unresolved": after_unresolved - protected,
+            "sunk_cost": total - after_unresolved,
+            "total": float(total),
+        }
 
     @staticmethod
     def _has_overlap(activities: list) -> bool:
