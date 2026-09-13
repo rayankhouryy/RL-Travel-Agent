@@ -4,35 +4,35 @@
 
 For a nonterminal transition:
 
-$$
+```math
 r_t =
 -c_{\mathrm{step}}
 -c_{\mathrm{invalid}}\mathbf{1}[\mathrm{invalid}]
 +b_{\mathrm{booking}}\mathbf{1}[\mathrm{useful\ booking}]
 +\gamma\Phi(s_{t+1})-\Phi(s_t).
-$$
+```
 
 The potential is scaled feasible itinerary coverage:
 
-$$
+```math
 \Phi(s)=
 \alpha\frac{
 \mathbf{1}[\mathrm{flight}]
 +\mathbf{1}[\mathrm{hotel}]
 +\min(n_{\mathrm{activities}}/n_{\mathrm{required}},1)
 }{3}.
-$$
+```
 
 At a true terminal state, $\Phi(s_T)=0$. For a fixed trajectory:
 
-$$
+```math
 \sum_{t=0}^{T-1}\gamma^t
 \left(
 \gamma\Phi(s_{t+1})-\Phi(s_t)
 \right)
 =
 -\Phi(s_0)+\gamma^T\Phi(s_T).
-$$
+```
 
 The initial itinerary is empty, so $\Phi(s_0)=0$. With terminal potential also
 zero, changing the shaping scale does not change the discounted ordering of
@@ -44,10 +44,10 @@ artificial terminals.
 
 Successful completion receives:
 
-$$
+```math
 R_T =
 w_pP+w_cC+w_bB+w_qQ+w_vV+w_rR-w_xX,
-$$
+```
 
 where:
 
@@ -61,20 +61,20 @@ where:
 
 Budget fit targets expected spending rather than maximizing money left:
 
-$$
+```math
 B =
 \exp\left(
 -\frac{|\mathrm{spend}-\mathrm{target\ spend}|}
 {\max(\mathrm{target\ spend},1)}
 \right).
-$$
+```
 
 Latent acceptance utility is:
 
-$$
+```math
 U_{\mathrm{latent}} =
 \frac{\sum_i\eta_i u_i}{\sum_i\eta_i},
-$$
+```
 
 where the hidden persona weights theme fit, quality, location, convenience,
 and budget fit.
@@ -83,7 +83,7 @@ and budget fit.
 
 The outcome evaluator first calculates:
 
-$$
+```math
 O =
 0.30T+
 0.22Q_f+
@@ -91,7 +91,7 @@ O =
 0.10C+
 0.15P+
 0.10B,
-$$
+```
 
 where:
 
@@ -104,7 +104,7 @@ where:
 
 Then:
 
-$$
+```math
 U_{\mathrm{realized}} =
 \mathrm{clip}
 \left(
@@ -116,7 +116,7 @@ U_{\mathrm{realized}} =
 \left(
 1-1.5\frac{\mathrm{sunk\ cost}}{\mathrm{hard\ budget}}
 \right)_+.
-$$
+```
 
 Realized satisfaction is reported through `info` and does not enter the reward.
 Tests replace each implementation independently and verify that reward and
