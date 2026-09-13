@@ -77,6 +77,7 @@ class TravelState:
     step_limit: int = 40
     booked: Set[int] = field(default_factory=set)
     spent: float = 0.0
+    sunk_cost: float = 0.0
     step_count: int = 0
     search_count: int = 0
     proposal_count: int = 0

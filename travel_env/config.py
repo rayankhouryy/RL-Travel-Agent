@@ -9,6 +9,7 @@ import yaml
 
 @dataclass(frozen=True)
 class RewardWeights:
+    shaping_scale: float = 0.25
     preference: float = 3.0
     coherence: float = 2.0
     budget: float = 1.5
@@ -31,6 +32,7 @@ class EnvironmentConfig:
     client_patience: int = 4
     acceptance_threshold: float = 0.58
     cancellation_fee_rate: float = 0.10
+    refundable_premium: float = 0.15
     disruption_probability: float = 0.0
     difficulty: int = 1
     reward: RewardWeights = field(default_factory=RewardWeights)

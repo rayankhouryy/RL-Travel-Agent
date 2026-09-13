@@ -15,6 +15,7 @@ class HeuristicPolicy:
             "location": 0.10,
             "convenience": 0.10,
             "price": 0.55,
+            "refundability": 0.0,
         },
         "balanced": {
             "preference": 0.30,
@@ -22,6 +23,7 @@ class HeuristicPolicy:
             "location": 0.20,
             "convenience": 0.15,
             "price": 0.15,
+            "refundability": 0.0,
         },
         "experience": {
             "preference": 0.40,
@@ -29,6 +31,7 @@ class HeuristicPolicy:
             "location": 0.15,
             "convenience": 0.10,
             "price": 0.05,
+            "refundability": 0.0,
         },
     }
 
@@ -174,6 +177,7 @@ class HeuristicPolicy:
                 + self.weights["location"] * location
                 + self.weights["convenience"] * convenience
                 + self.weights["price"] * (1.0 - price)
+                + self.weights["refundability"] * row[13]
             )
             scores.append(score)
         return candidates[int(np.argmax(scores))]

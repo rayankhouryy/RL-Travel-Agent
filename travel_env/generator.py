@@ -109,6 +109,7 @@ class TravelWorldGenerator:
         for _ in range(6):
             quality = float(rng.beta(2.4, 1.9))
             convenience = float(rng.beta(2.0, 2.0))
+            refundable = bool(rng.random() < 0.35)
             price = (
                 190
                 * request.party_size
@@ -119,6 +120,8 @@ class TravelWorldGenerator:
                 * (0.75 + 0.65 * convenience)
                 * rng.lognormal(0.0, 0.13)
             )
+            if refundable:
+                price *= 1.0 + self.config.refundable_premium
             departure = float(rng.uniform(4, 18))
             duration = float(rng.uniform(5, 14))
             items.append(
@@ -132,7 +135,7 @@ class TravelWorldGenerator:
                     theme=np.zeros(len(THEMES), dtype=np.float32),
                     start=departure,
                     end=departure + duration,
-                    refundable=bool(rng.random() < 0.35),
+                    refundable=refundable,
                 )
             )
 
@@ -140,6 +143,7 @@ class TravelWorldGenerator:
             quality = float(rng.beta(2.2, 1.8))
             location = float(rng.beta(2.0, 2.0))
             popularity = float(rng.beta(2.0, 2.0))
+            refundable = bool(rng.random() < 0.55)
             nightly = (
                 95
                 * destination_base
@@ -149,6 +153,8 @@ class TravelWorldGenerator:
                 * (0.72 + 0.75 * location)
                 * rng.lognormal(0.0, 0.18)
             )
+            if refundable:
+                nightly *= 1.0 + self.config.refundable_premium
             items.append(
                 self._item(
                     items,
@@ -160,7 +166,7 @@ class TravelWorldGenerator:
                     theme=rng.dirichlet(np.full(len(THEMES), 1.5)).astype(np.float32),
                     start=0.0,
                     end=float(request.duration_days * 24),
-                    refundable=bool(rng.random() < 0.55),
+                    refundable=refundable,
                     available=bool(rng.random() > 0.06 + 0.12 * popularity),
                 )
             )
@@ -177,6 +183,7 @@ class TravelWorldGenerator:
                 start = float(day * 24 + rng.integers(9, 19))
             duration = float(rng.choice([2, 3, 4]))
             theme = rng.dirichlet(np.full(len(THEMES), 0.55)).astype(np.float32)
+            refundable = bool(rng.random() < 0.45)
             price = (
                 (32 + 105 * quality + 45 * popularity)
                 * request.party_size
@@ -184,6 +191,8 @@ class TravelWorldGenerator:
                 * season
                 * rng.lognormal(0.0, 0.16)
             )
+            if refundable:
+                price *= 1.0 + self.config.refundable_premium
             items.append(
                 self._item(
                     items,
@@ -195,7 +204,7 @@ class TravelWorldGenerator:
                     theme=theme,
                     start=start,
                     end=start + duration,
-                    refundable=bool(rng.random() < 0.45),
+                    refundable=refundable,
                     available=(
                         True
                         if activity_number < profile.required_activities

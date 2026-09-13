@@ -111,6 +111,7 @@ class TravelAgentEnv(gym.Env):
             valid=valid,
             useful_booking=useful_booking,
             finishing=finishing,
+            terminal=state.done,
         )
         terminated = state.done
         truncated = state.step_count >= state.step_limit and not terminated
@@ -219,6 +220,7 @@ class TravelAgentEnv(gym.Env):
         refund = item.price if item.refundable else item.price * (
             1.0 - self.config.cancellation_fee_rate
         )
+        state.sunk_cost += item.price - refund
         state.spent = max(0.0, state.spent - refund)
         state.booked.remove(target)
         state.awaiting_revision = False
@@ -259,6 +261,7 @@ class TravelAgentEnv(gym.Env):
 
         state.booked.remove(existing.index)
         state.booked.add(target)
+        state.sunk_cost += existing.price - refund
         state.spent = projected
         state.rebooking_count += 1
         state.awaiting_revision = False
@@ -589,6 +592,9 @@ class TravelAgentEnv(gym.Env):
         state = self._require_state()
         info = {
             "spent": round(state.spent, 2),
+            "sunk_cost": round(state.sunk_cost, 2),
+            "sunk_cost_fraction": state.sunk_cost
+            / max(state.hard_budget(), 1.0),
             "hard_budget": round(state.hard_budget(), 2),
             "steps": state.step_count,
             "step_limit": state.step_limit,
@@ -604,6 +610,18 @@ class TravelAgentEnv(gym.Env):
             "trip_started": state.trip_started,
             "trip_completed": state.trip_completed,
             "disruptions": len(state.disruptions),
+            "refundable_share": (
+                float(
+                    np.mean(
+                        [
+                            float(item.refundable)
+                            for item in state.booked_items()
+                        ]
+                    )
+                )
+                if state.booked
+                else 0.0
+            ),
             "realized_satisfaction": self.reward_model.realized_satisfaction(
                 state
             ),

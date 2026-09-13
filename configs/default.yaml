@@ -5,10 +5,12 @@ discount: 0.99
 client_patience: 4
 acceptance_threshold: 0.58
 cancellation_fee_rate: 0.10
+refundable_premium: 0.15
 disruption_probability: 0.08
 difficulty: 1
 
 reward:
+  shaping_scale: 0.25
   preference: 3.0
   coherence: 2.0
   budget: 1.5

@@ -28,7 +28,8 @@ class RewardModel:
             counts[InventoryCategory.ACTIVITY]
             / max(state.required_activities, 1),
         )
-        return (flight + hotel + activities) / 3.0
+        coverage = (flight + hotel + activities) / 3.0
+        return self.config.reward.shaping_scale * coverage
 
     def transition(
         self,
@@ -38,11 +39,11 @@ class RewardModel:
         valid: bool,
         useful_booking: bool,
         finishing: bool,
+        terminal: bool,
     ) -> RewardResult:
         weights = self.config.reward
-        shaping = (
-            self.config.discount * self.potential(state) - previous_potential
-        )
+        next_potential = 0.0 if terminal else self.potential(state)
+        shaping = self.config.discount * next_potential - previous_potential
         components = {
             "step_cost": -weights.step_cost,
             "potential_shaping": shaping,
@@ -186,6 +187,10 @@ class RewardModel:
         )
         unresolved = len(state.active_disruption_targets() & state.booked)
         disruption_factor = max(0.0, 1.0 - 0.3 * unresolved)
+        sunk_loss_factor = max(
+            0.0,
+            1.0 - 1.5 * state.sunk_cost / max(state.hard_budget(), 1.0),
+        )
         return float(
             np.clip(
                 0.85 * self.latent_utility(state)
@@ -194,6 +199,7 @@ class RewardModel:
                 1.0,
             )
             * disruption_factor
+            * sunk_loss_factor
         )
 
     @staticmethod
