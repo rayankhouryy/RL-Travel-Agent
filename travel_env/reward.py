@@ -25,7 +25,8 @@ class RewardModel:
         hotel = min(1.0, float(counts[InventoryCategory.HOTEL]))
         activities = min(
             1.0,
-            counts[InventoryCategory.ACTIVITY] / self.config.min_activities,
+            counts[InventoryCategory.ACTIVITY]
+            / max(state.required_activities, 1),
         )
         return (flight + hotel + activities) / 3.0
 
@@ -51,7 +52,9 @@ class RewardModel:
         }
 
         if finishing:
-            if not state.has_complete_itinerary(self.config.min_activities):
+            if not valid:
+                components["terminal"] = -weights.incomplete_finish
+            elif not state.has_complete_itinerary():
                 components["terminal"] = -weights.incomplete_finish
             elif not state.client_accepted:
                 components["terminal"] = -0.5 * weights.incomplete_finish
@@ -176,7 +179,7 @@ class RewardModel:
         )
 
     def realized_satisfaction(self, state: TravelState) -> float:
-        if not state.has_complete_itinerary(self.config.min_activities):
+        if not state.has_complete_itinerary():
             return 0.0
         robustness = float(
             np.mean([1.0 if item.refundable else 0.35 for item in state.booked_items()])

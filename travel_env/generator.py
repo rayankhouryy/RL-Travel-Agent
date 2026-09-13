@@ -5,6 +5,7 @@ from typing import List, Optional
 import numpy as np
 
 from travel_env.config import EnvironmentConfig
+from travel_env.curriculum import DifficultyProfile, difficulty_profile
 from travel_env.models import (
     THEMES,
     ClientPersona,
@@ -23,21 +24,34 @@ class TravelWorldGenerator:
         self, rng: np.random.Generator, difficulty: Optional[int] = None
     ) -> TravelState:
         difficulty = difficulty or self.config.difficulty
-        persona = self._persona(rng, difficulty)
-        request = self._request(rng, persona, difficulty)
-        inventory = self._inventory(rng, request, difficulty)
+        profile = difficulty_profile(difficulty)
+        persona = self._persona(rng, profile)
+        request = self._request(rng, persona, profile)
+        inventory = self._inventory(rng, request, persona, profile)
+        self._ensure_feasible(inventory, request, persona, profile)
         return TravelState(
             persona=persona,
             request=request,
             inventory=inventory,
             visible=np.zeros(self.config.max_inventory, dtype=np.int8),
-            patience_remaining=max(1, self.config.client_patience - difficulty + 1),
+            difficulty=profile.level,
+            required_activities=profile.required_activities,
+            disruption_probability=min(
+                1.0,
+                self.config.disruption_probability
+                * profile.disruption_multiplier,
+            ),
+            max_disruptions=profile.max_disruptions,
+            step_limit=max(self.config.max_steps, profile.step_limit),
+            patience_remaining=min(self.config.client_patience, profile.patience),
         )
 
     def _persona(
-        self, rng: np.random.Generator, difficulty: int
+        self, rng: np.random.Generator, profile: DifficultyProfile
     ) -> ClientPersona:
-        preferences = rng.dirichlet(np.full(len(THEMES), 0.8 + 0.15 * difficulty))
+        preferences = rng.dirichlet(
+            np.full(len(THEMES), 0.8 + 0.15 * profile.level)
+        )
         return ClientPersona(
             preference_weights=preferences.astype(np.float32),
             budget_sensitivity=float(rng.beta(2.0, 2.0)),
@@ -55,15 +69,18 @@ class TravelWorldGenerator:
         self,
         rng: np.random.Generator,
         persona: ClientPersona,
-        difficulty: int,
+        profile: DifficultyProfile,
     ) -> TripRequest:
         duration = int(rng.integers(4, 9))
         party_size = int(rng.integers(1, 5))
         base_budget = 950 + 320 * duration + 430 * party_size
-        budget = float(base_budget * rng.uniform(0.82, 1.25 - 0.04 * difficulty))
+        budget = float(
+            base_budget
+            * rng.uniform(profile.budget_low, profile.budget_high)
+        )
 
         stated = np.zeros(len(THEMES), dtype=np.float32)
-        visible_count = max(1, 3 - difficulty // 2)
+        visible_count = profile.preference_dimensions_visible
         visible_dimensions = np.argsort(persona.preference_weights)[-visible_count:]
         noise = rng.normal(0.0, 0.06, visible_count)
         stated[visible_dimensions] = np.clip(
@@ -81,11 +98,12 @@ class TravelWorldGenerator:
         self,
         rng: np.random.Generator,
         request: TripRequest,
-        difficulty: int,
+        persona: ClientPersona,
+        profile: DifficultyProfile,
     ) -> List[InventoryItem]:
         destination_base = float(rng.uniform(0.85, 1.35))
         season = float(rng.uniform(0.85, 1.45))
-        scarcity = 1.0 + 0.08 * difficulty
+        scarcity = profile.scarcity_multiplier
         items: List[InventoryItem] = []
 
         for _ in range(6):
@@ -148,10 +166,15 @@ class TravelWorldGenerator:
             )
 
         while len(items) < self.config.max_inventory:
+            activity_number = len(items) - 14
             quality = float(rng.beta(2.0, 2.0))
             popularity = float(rng.beta(1.8, 2.2))
-            day = int(rng.integers(0, request.duration_days))
-            start = float(day * 24 + rng.integers(9, 19))
+            if activity_number < profile.required_activities:
+                day = activity_number % request.duration_days
+                start = float(day * 24 + 10)
+            else:
+                day = int(rng.integers(0, request.duration_days))
+                start = float(day * 24 + rng.integers(9, 19))
             duration = float(rng.choice([2, 3, 4]))
             theme = rng.dirichlet(np.full(len(THEMES), 0.55)).astype(np.float32)
             price = (
@@ -173,10 +196,77 @@ class TravelWorldGenerator:
                     start=start,
                     end=start + duration,
                     refundable=bool(rng.random() < 0.45),
-                    available=bool(rng.random() > 0.04 + 0.10 * popularity),
+                    available=(
+                        True
+                        if activity_number < profile.required_activities
+                        else bool(rng.random() > 0.04 + 0.10 * popularity)
+                    ),
                 )
             )
         return items
+
+    @staticmethod
+    def _ensure_feasible(
+        inventory: List[InventoryItem],
+        request: TripRequest,
+        persona: ClientPersona,
+        profile: DifficultyProfile,
+    ) -> None:
+        flights = [
+            item
+            for item in inventory
+            if item.category == InventoryCategory.FLIGHT and item.available
+        ]
+        hotels = [
+            item
+            for item in inventory
+            if item.category == InventoryCategory.HOTEL and item.available
+        ]
+        if not hotels:
+            hotel = min(
+                (
+                    item
+                    for item in inventory
+                    if item.category == InventoryCategory.HOTEL
+                ),
+                key=lambda item: item.price,
+            )
+            hotel.available = True
+            hotels = [hotel]
+
+        activities = sorted(
+            (
+                item
+                for item in inventory
+                if item.category == InventoryCategory.ACTIVITY and item.available
+            ),
+            key=lambda item: item.price,
+        )
+        selected: List[InventoryItem] = []
+        for item in activities:
+            if all(
+                item.end_hour <= chosen.start_hour
+                or chosen.end_hour <= item.start_hour
+                for chosen in selected
+            ):
+                selected.append(item)
+            if len(selected) == profile.required_activities:
+                break
+
+        if len(selected) < profile.required_activities:
+            raise RuntimeError("Synthetic generator failed to create a feasible activity set")
+
+        minimum_cost = (
+            min(item.price for item in flights)
+            + min(item.price for item in hotels)
+            + sum(item.price for item in selected)
+        )
+        required_budget = (
+            minimum_cost
+            * 1.03
+            / max(1.0 + persona.budget_flexibility, 1e-8)
+        )
+        request.budget = round(max(request.budget, required_budget), 2)
 
     @staticmethod
     def _item(

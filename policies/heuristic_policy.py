@@ -46,13 +46,22 @@ class HeuristicPolicy:
             observation["disruption_mask"] * booking_mask
         )
         if len(disrupted) and action_mask[ActionType.REBOOK]:
-            source = int(disrupted[0])
-            category = int(np.argmax(inventory[source, :3]))
-            target = self._best_target(
-                observation, ActionType.REBOOK, category
-            )
-            if target is not None:
-                return self._action(ActionType.REBOOK, target, source)
+            for source in disrupted:
+                targets = np.flatnonzero(
+                    observation["swap_mask"][1, source]
+                )
+                if len(targets):
+                    category = int(np.argmax(inventory[source, :3]))
+                    target = self._best_from_candidates(
+                        observation,
+                        [int(index) for index in targets],
+                        category,
+                    )
+                    return self._action(
+                        ActionType.REBOOK,
+                        target,
+                        int(source),
+                    )
 
         visible_categories = {
             int(np.argmax(row[:3]))
@@ -82,7 +91,11 @@ class HeuristicPolicy:
                 ActionType.SELECT_ACTIVITY,
             )
         ):
-            required = 2 if category == 2 else 1
+            required = (
+                max(1, int(round(observation["trip_state"][13] * 4)))
+                if category == 2
+                else 1
+            )
             if booked_categories.count(category) < required:
                 target = self._best_target(
                     observation, select_action, category
@@ -90,8 +103,11 @@ class HeuristicPolicy:
                 if target is not None:
                     return self._action(select_action, target)
 
-        if observation["trip_state"][7] > 0.5:
+        if observation["trip_state"][12] > 0.5:
             return self._action(ActionType.FINISH)
+
+        if observation["trip_state"][7] > 0.5:
+            return self._action(ActionType.ADVANCE_TRIP)
 
         if observation["trip_state"][9] > 0.5:
             replacement = self._revision_action(observation)
@@ -125,6 +141,24 @@ class HeuristicPolicy:
         if not candidates:
             return None
 
+        remaining_budget = float(observation["trip_state"][1])
+        reserve = self._minimum_reserve(observation, category)
+        affordable = [
+            index
+            for index in candidates
+            if observation["inventory"][index, 3] + reserve
+            <= remaining_budget + 1e-6
+        ]
+        if affordable:
+            candidates = affordable
+        return self._best_from_candidates(observation, candidates, category)
+
+    def _best_from_candidates(
+        self,
+        observation: Dict[str, np.ndarray],
+        candidates,
+        category: int,
+    ):
         preferences = observation["preferences"]
         scores = []
         for index in candidates:
@@ -143,6 +177,40 @@ class HeuristicPolicy:
             )
             scores.append(score)
         return candidates[int(np.argmax(scores))]
+
+    @staticmethod
+    def _minimum_reserve(
+        observation: Dict[str, np.ndarray], selecting_category: int
+    ) -> float:
+        inventory = observation["inventory"]
+        visible = observation["inventory_mask"]
+        booked = set(np.flatnonzero(observation["booking_mask"]).tolist())
+        booked_counts = [0, 0, 0]
+        for index in booked:
+            booked_counts[int(np.argmax(inventory[index, :3]))] += 1
+        required = [
+            1,
+            1,
+            max(1, int(round(observation["trip_state"][13] * 4))),
+        ]
+        required[selecting_category] = max(
+            0,
+            required[selecting_category] - 1,
+        )
+
+        reserve = 0.0
+        for category in range(3):
+            needed = max(0, required[category] - booked_counts[category])
+            prices = sorted(
+                float(inventory[index, 3])
+                for index in range(len(inventory))
+                if visible[index]
+                and index not in booked
+                and inventory[index, 14] > 0.5
+                and int(np.argmax(inventory[index, :3])) == category
+            )
+            reserve += sum(prices[:needed])
+        return reserve
 
     def _revision_action(self, observation: Dict[str, np.ndarray]):
         inventory = observation["inventory"]
@@ -166,18 +234,19 @@ class HeuristicPolicy:
                 + 0.05 * (1.0 - row[3])
             )
 
-        source = min(activity_bookings, key=preference_score)
-        candidates = [
-            int(index)
-            for index in np.flatnonzero(
-                observation["target_mask"][ActionType.SWAP_BOOKING]
-            )
-            if int(np.argmax(inventory[index, :3])) == 2
-            and index not in booked
-        ]
-        if not candidates:
+        valid_pairs = []
+        for source in activity_bookings:
+            for target in np.flatnonzero(
+                observation["swap_mask"][0, source]
+            ):
+                valid_pairs.append((source, int(target)))
+        if not valid_pairs:
             return None
-        target = max(candidates, key=preference_score)
+        source, target = max(
+            valid_pairs,
+            key=lambda pair: preference_score(pair[1])
+            - preference_score(pair[0]),
+        )
         return self._action(ActionType.SWAP_BOOKING, target, source)
 
     @staticmethod

@@ -14,12 +14,17 @@ class DisruptionEngine:
     def maybe_trigger(
         self, state: TravelState, rng: np.random.Generator
     ) -> Optional[Disruption]:
-        if not state.booked or rng.random() >= self.config.disruption_probability:
+        if (
+            not state.booked
+            or len(state.disruptions) >= state.max_disruptions
+            or rng.random() >= state.disruption_probability
+        ):
             return None
         candidates = [
             index
             for index in state.booked
             if state.inventory[index].available
+            and self._can_disrupt(state, index)
         ]
         if not candidates:
             return None
@@ -50,3 +55,12 @@ class DisruptionEngine:
         )
         state.disruptions.append(disruption)
         return disruption
+
+    @staticmethod
+    def _can_disrupt(state: TravelState, index: int) -> bool:
+        item = state.inventory[index]
+        if item.category == InventoryCategory.FLIGHT:
+            return state.current_day <= 1
+        if item.category == InventoryCategory.ACTIVITY:
+            return item.start_hour >= state.current_day * 24.0
+        return True

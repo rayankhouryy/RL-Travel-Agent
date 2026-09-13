@@ -25,10 +25,8 @@ def test_flight_cancellation_invalidates_early_booked_activities():
     )
     state.booked.update({flight.index, activity.index})
     state.spent = flight.price + activity.price
-
-    env.disruption_engine.config = EnvironmentConfig(
-        disruption_probability=1.0
-    )
+    state.disruption_probability = 1.0
+    state.max_disruptions = 1
     disruption = env.disruption_engine.maybe_trigger(
         state,
         _ChooseFlightRng(flight.index),
@@ -53,4 +51,3 @@ class _ChooseFlightRng:
     def choice(self, candidates):
         assert self.target in candidates
         return self.target
-

@@ -17,6 +17,7 @@ class ActionType(IntEnum):
     MESSAGE_CLIENT = 9
     REBOOK = 10
     FINISH = 11
+    ADVANCE_TRIP = 12
 
 
 TARGETED_ACTIONS = {

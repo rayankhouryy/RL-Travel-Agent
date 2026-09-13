@@ -52,8 +52,11 @@ reset(seed, options) -> observation, info
 step(action) -> observation, reward, terminated, truncated, info
 ```
 
-`terminated` means the client accepted a complete itinerary and the agent
-finished. `truncated` means the episode reached its configured step horizon.
+After client acceptance, `ADVANCE_TRIP` moves through the trip one simulated
+day at a time and can expose hidden disruption events. `terminated` means the
+episode reached either successful completion or explicit client rejection.
+`info["client_accepted"]` and `info["trip_completed"]` distinguish success from
+failure. `truncated` means the episode reached its configured step horizon.
 
 ## Environment model
 
@@ -79,7 +82,7 @@ The canonical action is a parameterized Gymnasium `Dict`:
 
 ```python
 spaces.Dict({
-    "action_type": spaces.Discrete(12),
+    "action_type": spaces.Discrete(13),
     "source_index": spaces.Discrete(max_inventory),
     "target_index": spaces.Discrete(max_inventory),
 })
@@ -90,14 +93,16 @@ Supported verbs:
 - `SEARCH_FLIGHTS`, `SEARCH_HOTELS`, `SEARCH_ACTIVITIES`
 - `SELECT_FLIGHT`, `SELECT_HOTEL`, `SELECT_ACTIVITY`
 - `REMOVE_BOOKING`, `SWAP_BOOKING`, `REBOOK`
-- `PROPOSE_ITINERARY`, `MESSAGE_CLIENT`, `FINISH`
+- `PROPOSE_ITINERARY`, `MESSAGE_CLIENT`
+- `ADVANCE_TRIP`, `FINISH`
 
 `source_index` identifies the booking being replaced. `target_index` identifies
 the selected replacement or new inventory item. Unused parameters are set to
 zero.
 
-The observation includes both an action-type mask and per-action target masks.
-The masks make a variable inventory usable through fixed Gymnasium spaces
+The observation includes an action-type mask, per-action target masks, and an
+explicit pairwise `(source, target)` mask for swaps and disruption recovery.
+These masks make variable inventory usable through fixed Gymnasium spaces
 without hiding validity rules inside a particular policy implementation.
 
 ## Observation space
@@ -107,6 +112,7 @@ Observations contain fixed-size numeric tensors:
 - normalized request features
 - stated and revealed preference signals
 - budget, booking, patience, acceptance, and episode progress
+- curriculum level, required activities, trip day, and trip phase
 - a padded inventory slate
 - visibility, booking, disruption, action, and target masks
 
@@ -182,6 +188,26 @@ The disruption engine currently models:
 A flight cancellation can invalidate already-booked activities that become
 unreachable after the changed arrival. The environment records the causal set
 on the disruption and requires the affected reservations to be rebooked.
+Disruptions are exposed during the simulated trip phase rather than while the
+agent is still searching inventory.
+
+## Curriculum
+
+Reset with a difficulty from 1 through 4:
+
+```python
+observation, info = env.reset(seed=42, options={"difficulty": 3})
+```
+
+Higher levels increase required activity coverage, hide more latent preference
+dimensions, tighten budgets, reduce client patience, increase scarcity, allow
+more disruptions, and provide a longer horizon for recovery.
+
+Compare the heuristic policy across all levels:
+
+```bash
+python -m evaluation.curriculum --episodes 200
+```
 
 ## Baselines and evaluation
 

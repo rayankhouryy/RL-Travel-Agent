@@ -70,6 +70,11 @@ class TravelState:
     request: TripRequest
     inventory: List[InventoryItem]
     visible: np.ndarray
+    difficulty: int = 1
+    required_activities: int = 2
+    disruption_probability: float = 0.0
+    max_disruptions: int = 0
+    step_limit: int = 40
     booked: Set[int] = field(default_factory=set)
     spent: float = 0.0
     step_count: int = 0
@@ -82,6 +87,9 @@ class TravelState:
     )
     awaiting_revision: bool = False
     client_accepted: bool = False
+    current_day: int = 0
+    trip_started: bool = False
+    trip_completed: bool = False
     done: bool = False
     disruptions: List[Disruption] = field(default_factory=list)
     invalid_actions: int = 0
@@ -90,11 +98,12 @@ class TravelState:
         return [self.inventory[index] for index in self.booked
                 if self.inventory[index].category == category]
 
-    def has_complete_itinerary(self, min_activities: int) -> bool:
+    def has_complete_itinerary(self) -> bool:
         return (
             len(self.items_by_category(InventoryCategory.FLIGHT)) == 1
             and len(self.items_by_category(InventoryCategory.HOTEL)) == 1
-            and len(self.items_by_category(InventoryCategory.ACTIVITY)) >= min_activities
+            and len(self.items_by_category(InventoryCategory.ACTIVITY))
+            >= self.required_activities
             and all(self.inventory[index].available for index in self.booked)
         )
 

@@ -29,7 +29,7 @@ class EnvironmentConfig:
     min_activities: int = 2
     discount: float = 0.99
     client_patience: int = 4
-    acceptance_threshold: float = 0.66
+    acceptance_threshold: float = 0.58
     cancellation_fee_rate: float = 0.10
     disruption_probability: float = 0.0
     difficulty: int = 1

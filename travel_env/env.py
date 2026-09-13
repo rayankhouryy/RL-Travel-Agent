@@ -38,7 +38,7 @@ class TravelAgentEnv(gym.Env):
                 "preferences": spaces.Box(
                     0.0, 1.0, shape=(len(THEMES),), dtype=np.float32
                 ),
-                "trip_state": spaces.Box(0.0, 1.0, shape=(10,), dtype=np.float32),
+                "trip_state": spaces.Box(0.0, 1.0, shape=(14,), dtype=np.float32),
                 "inventory": spaces.Box(
                     -1.0,
                     1.0,
@@ -50,6 +50,9 @@ class TravelAgentEnv(gym.Env):
                 "action_mask": spaces.MultiBinary(len(ActionType)),
                 "target_mask": spaces.MultiBinary(
                     (len(ActionType), self.config.max_inventory)
+                ),
+                "swap_mask": spaces.MultiBinary(
+                    (2, self.config.max_inventory, self.config.max_inventory)
                 ),
                 "disruption_mask": spaces.MultiBinary(self.config.max_inventory),
             }
@@ -81,21 +84,26 @@ class TravelAgentEnv(gym.Env):
             state.invalid_actions += 1
 
         disruption = None
-        disruption_actions = {
-            ActionType.SELECT_FLIGHT,
-            ActionType.SELECT_HOTEL,
-            ActionType.SELECT_ACTIVITY,
-            ActionType.SWAP_BOOKING,
-            ActionType.REBOOK,
-        }
         try:
             decoded_action = ActionType(int(action["action_type"]))
         except (KeyError, TypeError, ValueError):
             decoded_action = None
-        if valid and decoded_action in disruption_actions:
+        if valid and decoded_action == ActionType.ADVANCE_TRIP:
             disruption = self.disruption_engine.maybe_trigger(
                 state, self.np_random
             )
+            if disruption is not None:
+                state.client_accepted = False
+                state.awaiting_revision = True
+                state.trip_completed = False
+                state.patience_remaining = max(
+                    state.patience_remaining,
+                    min(2, self.config.client_patience),
+                )
+                reason = f"trip_disrupted:{disruption.kind}"
+            elif state.current_day >= state.request.duration_days:
+                state.trip_completed = True
+                reason = "trip_completed"
 
         reward = self.reward_model.transition(
             previous_potential,
@@ -105,7 +113,7 @@ class TravelAgentEnv(gym.Env):
             finishing=finishing,
         )
         terminated = state.done
-        truncated = state.step_count >= self.config.max_steps and not terminated
+        truncated = state.step_count >= state.step_limit and not terminated
         info = self._info()
         info.update(
             {
@@ -156,6 +164,8 @@ class TravelAgentEnv(gym.Env):
             return self._propose()
         if action == ActionType.MESSAGE_CLIENT:
             return self._message()
+        if action == ActionType.ADVANCE_TRIP:
+            return self._advance_trip()
         if action == ActionType.FINISH:
             return self._finish()
         return False, False, False, "unsupported_action"
@@ -198,6 +208,7 @@ class TravelAgentEnv(gym.Env):
         state.spent += item.price
         state.awaiting_revision = False
         state.client_accepted = False
+        state.trip_completed = False
         return True, True, False, "booking_created"
 
     def _remove(self, target: int) -> Tuple[bool, bool, bool, str]:
@@ -212,6 +223,7 @@ class TravelAgentEnv(gym.Env):
         state.booked.remove(target)
         state.awaiting_revision = False
         state.client_accepted = False
+        state.trip_completed = False
         return True, False, False, "booking_removed"
 
     def _swap(
@@ -251,6 +263,7 @@ class TravelAgentEnv(gym.Env):
         state.rebooking_count += 1
         state.awaiting_revision = False
         state.client_accepted = False
+        state.trip_completed = False
         for disruption in state.disruptions:
             remaining = (
                 {disruption.target_index} | disruption.affected_indices
@@ -261,7 +274,7 @@ class TravelAgentEnv(gym.Env):
 
     def _propose(self) -> Tuple[bool, bool, bool, str]:
         state = self._require_state()
-        if not state.has_complete_itinerary(self.config.min_activities):
+        if not state.has_complete_itinerary():
             return False, False, False, "incomplete_itinerary"
         if state.patience_remaining <= 0:
             return False, False, False, "client_patience_exhausted"
@@ -270,8 +283,12 @@ class TravelAgentEnv(gym.Env):
         utility = self.reward_model.latent_utility(state)
         state.client_accepted = utility >= self.config.acceptance_threshold
         if not state.client_accepted:
-            state.awaiting_revision = True
             self._reveal_feedback()
+            if state.patience_remaining <= 0:
+                state.awaiting_revision = False
+                state.done = True
+                return True, False, True, "client_rejected_final_proposal"
+            state.awaiting_revision = True
             return True, False, False, "client_requested_changes"
         state.awaiting_revision = False
         return True, False, False, "client_accepted"
@@ -291,12 +308,29 @@ class TravelAgentEnv(gym.Env):
 
     def _finish(self) -> Tuple[bool, bool, bool, str]:
         state = self._require_state()
-        if not state.has_complete_itinerary(self.config.min_activities):
+        if not state.has_complete_itinerary():
             return False, False, True, "cannot_finish_incomplete_itinerary"
         if not state.client_accepted:
             return False, False, True, "client_has_not_accepted"
+        if not state.trip_completed:
+            return False, False, True, "trip_not_completed"
         state.done = True
         return True, False, True, "episode_completed"
+
+    def _advance_trip(self) -> Tuple[bool, bool, bool, str]:
+        state = self._require_state()
+        if not state.client_accepted:
+            return False, False, False, "client_has_not_accepted"
+        if not state.has_complete_itinerary():
+            return False, False, False, "itinerary_not_travel_ready"
+        if state.trip_completed:
+            return False, False, False, "trip_already_completed"
+        state.trip_started = True
+        state.current_day = min(
+            state.current_day + 1,
+            state.request.duration_days,
+        )
+        return True, False, False, "trip_advanced"
 
     def _reveal_feedback(self) -> bool:
         state = self._require_state()
@@ -340,14 +374,18 @@ class TravelAgentEnv(gym.Env):
                 float(counts[InventoryCategory.HOTEL] > 0),
                 min(
                     counts[InventoryCategory.ACTIVITY]
-                    / max(self.config.min_activities, 1),
+                    / max(state.required_activities, 1),
                     1.0,
                 ),
                 state.patience_remaining / max(self.config.client_patience, 1),
-                min(state.step_count / self.config.max_steps, 1.0),
+                min(state.step_count / state.step_limit, 1.0),
                 float(state.client_accepted),
                 min(len(state.disruptions) / 4.0, 1.0),
                 float(state.awaiting_revision),
+                state.current_day / max(state.request.duration_days, 1),
+                float(state.trip_started),
+                float(state.trip_completed),
+                min(state.required_activities / 4.0, 1.0),
             ],
             dtype=np.float32,
         )
@@ -374,6 +412,7 @@ class TravelAgentEnv(gym.Env):
             "booking_mask": booking_mask,
             "action_mask": self._action_mask(),
             "target_mask": self._target_mask(),
+            "swap_mask": self._swap_mask(),
             "disruption_mask": disruption_mask,
         }
 
@@ -418,6 +457,7 @@ class TravelAgentEnv(gym.Env):
     def _action_mask(self) -> np.ndarray:
         state = self._require_state()
         mask = np.zeros(len(ActionType), dtype=np.int8)
+        target_mask = self._target_mask()
         mask[
             [
                 ActionType.SEARCH_FLIGHTS,
@@ -425,39 +465,41 @@ class TravelAgentEnv(gym.Env):
                 ActionType.SEARCH_ACTIVITIES,
             ]
         ] = 1
-        visible_available = [
-            item
-            for item in state.inventory
-            if state.visible[item.index] and item.available
-        ]
-        for item in visible_available:
-            if item.category == InventoryCategory.FLIGHT:
-                mask[ActionType.SELECT_FLIGHT] = 1
-            elif item.category == InventoryCategory.HOTEL:
-                mask[ActionType.SELECT_HOTEL] = 1
-            else:
-                mask[ActionType.SELECT_ACTIVITY] = 1
-        if state.booked:
+        for action in (
+            ActionType.SELECT_FLIGHT,
+            ActionType.SELECT_HOTEL,
+            ActionType.SELECT_ACTIVITY,
+            ActionType.REMOVE_BOOKING,
+            ActionType.SWAP_BOOKING,
+            ActionType.REBOOK,
+        ):
+            mask[action] = int(bool(target_mask[action].any()))
+        if state.booked and target_mask[ActionType.REMOVE_BOOKING].any():
             mask[ActionType.REMOVE_BOOKING] = 1
-            mask[ActionType.SWAP_BOOKING] = 1
-        if state.active_disruption_targets() & state.booked:
-            mask[ActionType.REBOOK] = 1
         if (
-            state.has_complete_itinerary(self.config.min_activities)
+            state.has_complete_itinerary()
             and state.patience_remaining > 0
         ):
             mask[ActionType.PROPOSE_ITINERARY] = 1
         if state.patience_remaining > 0:
             mask[ActionType.MESSAGE_CLIENT] = 1
         if (
-            state.has_complete_itinerary(self.config.min_activities)
+            state.has_complete_itinerary()
             and state.client_accepted
+            and not state.trip_completed
+        ):
+            mask[ActionType.ADVANCE_TRIP] = 1
+        if (
+            state.has_complete_itinerary()
+            and state.client_accepted
+            and state.trip_completed
         ):
             mask[ActionType.FINISH] = 1
         return mask
 
     def _target_mask(self) -> np.ndarray:
         state = self._require_state()
+        swap_mask = self._swap_mask()
         mask = np.zeros(
             (len(ActionType), self.config.max_inventory),
             dtype=np.int8,
@@ -465,30 +507,83 @@ class TravelAgentEnv(gym.Env):
         for item in state.inventory:
             index = item.index
             if state.visible[index] and item.available:
-                if item.category == InventoryCategory.FLIGHT:
+                if self._is_selectable(item, InventoryCategory.FLIGHT):
                     mask[ActionType.SELECT_FLIGHT, index] = 1
-                elif item.category == InventoryCategory.HOTEL:
+                if self._is_selectable(item, InventoryCategory.HOTEL):
                     mask[ActionType.SELECT_HOTEL, index] = 1
-                else:
+                if self._is_selectable(item, InventoryCategory.ACTIVITY):
                     mask[ActionType.SELECT_ACTIVITY, index] = 1
 
-                if any(
-                    state.inventory[booked].category == item.category
-                    and booked != index
-                    for booked in state.booked
-                ):
+                if swap_mask[0, :, index].any():
                     mask[ActionType.SWAP_BOOKING, index] = 1
 
-                if any(
-                    state.inventory[booked].category == item.category
-                    and booked in state.active_disruption_targets()
-                    for booked in state.booked
-                ):
+                if swap_mask[1, :, index].any():
                     mask[ActionType.REBOOK, index] = 1
 
             if index in state.booked:
                 mask[ActionType.REMOVE_BOOKING, index] = 1
         return mask
+
+    def _is_selectable(
+        self, item: InventoryItem, category: InventoryCategory
+    ) -> bool:
+        state = self._require_state()
+        if (
+            item.category != category
+            or item.index in state.booked
+            or not item.available
+        ):
+            return False
+        if (
+            category in (InventoryCategory.FLIGHT, InventoryCategory.HOTEL)
+            and state.booking_for(category) is not None
+        ):
+            return False
+        if (
+            category == InventoryCategory.ACTIVITY
+            and state.activity_conflicts(item)
+        ):
+            return False
+        return state.spent + item.price <= state.hard_budget()
+
+    def _swap_mask(self) -> np.ndarray:
+        state = self._require_state()
+        mask = np.zeros(
+            (2, self.config.max_inventory, self.config.max_inventory),
+            dtype=np.int8,
+        )
+        disrupted = state.active_disruption_targets()
+        for source in state.booked:
+            for candidate in state.inventory:
+                if self._is_valid_swap_pair(source, candidate):
+                    mask[0, source, candidate.index] = 1
+                    if source in disrupted:
+                        mask[1, source, candidate.index] = 1
+        return mask
+
+    def _is_valid_swap_pair(
+        self, source: int, candidate: InventoryItem
+    ) -> bool:
+        state = self._require_state()
+        existing = state.inventory[source]
+        if (
+            not state.visible[candidate.index]
+            or not candidate.available
+            or existing.category != candidate.category
+            or source == candidate.index
+        ):
+            return False
+        if (
+            candidate.category == InventoryCategory.ACTIVITY
+            and state.activity_conflicts(candidate, ignore=source)
+        ):
+            return False
+        refund = (
+            existing.price
+            if existing.refundable
+            else existing.price * (1.0 - self.config.cancellation_fee_rate)
+        )
+        return state.spent - refund + candidate.price <= state.hard_budget()
 
     def _info(self) -> Dict[str, Any]:
         state = self._require_state()
@@ -496,14 +591,19 @@ class TravelAgentEnv(gym.Env):
             "spent": round(state.spent, 2),
             "hard_budget": round(state.hard_budget(), 2),
             "steps": state.step_count,
+            "step_limit": state.step_limit,
             "searches": state.search_count,
             "proposals": state.proposal_count,
             "rebookings": state.rebooking_count,
             "invalid_actions": state.invalid_actions,
-            "complete_itinerary": state.has_complete_itinerary(
-                self.config.min_activities
-            ),
+            "complete_itinerary": state.has_complete_itinerary(),
             "client_accepted": state.client_accepted,
+            "difficulty": state.difficulty,
+            "required_activities": state.required_activities,
+            "current_day": state.current_day,
+            "trip_started": state.trip_started,
+            "trip_completed": state.trip_completed,
+            "disruptions": len(state.disruptions),
             "realized_satisfaction": self.reward_model.realized_satisfaction(
                 state
             ),
