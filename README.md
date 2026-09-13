@@ -230,7 +230,7 @@ Evaluation additionally computes:
 
 $$
 U_{\text{realized}} =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 0.85U_{\text{latent}}+
 0.15\rho_{\text{robustness}}d_{\text{tolerance}},
