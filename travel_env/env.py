@@ -416,6 +416,9 @@ class TravelAgentEnv(gym.Env):
         targets = state.active_disruption_targets()
         if targets:
             disruption_mask[list(targets)] = 1
+        swap_mask = self._swap_mask()
+        target_mask = self._target_mask(swap_mask)
+        action_mask = self._action_mask(target_mask)
 
         return {
             "request": request,
@@ -424,9 +427,9 @@ class TravelAgentEnv(gym.Env):
             "inventory": inventory,
             "inventory_mask": state.visible.astype(np.int8),
             "booking_mask": booking_mask,
-            "action_mask": self._action_mask(),
-            "target_mask": self._target_mask(),
-            "swap_mask": self._swap_mask(),
+            "action_mask": action_mask,
+            "target_mask": target_mask,
+            "swap_mask": swap_mask,
             "disruption_mask": disruption_mask,
         }
 
@@ -468,10 +471,13 @@ class TravelAgentEnv(gym.Env):
             ]
         )
 
-    def _action_mask(self) -> np.ndarray:
+    def _action_mask(
+        self, target_mask: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         state = self._require_state()
         mask = np.zeros(len(ActionType), dtype=np.int8)
-        target_mask = self._target_mask()
+        if target_mask is None:
+            target_mask = self._target_mask()
         mask[
             [
                 ActionType.SEARCH_FLIGHTS,
@@ -511,9 +517,12 @@ class TravelAgentEnv(gym.Env):
             mask[ActionType.FINISH] = 1
         return mask
 
-    def _target_mask(self) -> np.ndarray:
+    def _target_mask(
+        self, swap_mask: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         state = self._require_state()
-        swap_mask = self._swap_mask()
+        if swap_mask is None:
+            swap_mask = self._swap_mask()
         mask = np.zeros(
             (len(ActionType), self.config.max_inventory),
             dtype=np.int8,
