@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional, Tuple
 
 import gymnasium as gym
@@ -10,6 +11,7 @@ from travel_env.actions import ActionType, TARGETED_ACTIONS, decode_action
 from travel_env.config import EnvironmentConfig
 from travel_env.disruptions import DisruptionEngine
 from travel_env.generator import TravelWorldGenerator
+from travel_env.market import MarketEngine
 from travel_env.models import THEMES, InventoryCategory, InventoryItem, TravelState
 from travel_env.reward import RewardModel
 
@@ -23,6 +25,7 @@ class TravelAgentEnv(gym.Env):
         self.generator = TravelWorldGenerator(self.config)
         self.reward_model = RewardModel(self.config)
         self.disruption_engine = DisruptionEngine(self.config)
+        self.market_engine = MarketEngine(self.config)
         self.state: Optional[TravelState] = None
 
         self.action_space = spaces.Dict(
@@ -104,6 +107,9 @@ class TravelAgentEnv(gym.Env):
             elif state.current_day >= state.request.duration_days:
                 state.trip_completed = True
                 reason = "trip_completed"
+
+        if valid and not state.done and decoded_action != ActionType.FINISH:
+            self.market_engine.advance(state, self.np_random)
 
         reward = self.reward_model.transition(
             previous_potential,
@@ -206,6 +212,7 @@ class TravelAgentEnv(gym.Env):
             return False, False, False, "hard_budget_exceeded"
 
         state.booked.add(target)
+        state.booking_prices[target] = item.price
         state.spent += item.price
         state.awaiting_revision = False
         state.client_accepted = False
@@ -217,10 +224,11 @@ class TravelAgentEnv(gym.Env):
         if target not in state.booked:
             return False, False, False, "booking_not_found"
         item = state.inventory[target]
-        refund = item.price if item.refundable else item.price * (
+        booked_price = state.booking_prices.pop(target, item.price)
+        refund = booked_price if item.refundable else booked_price * (
             1.0 - self.config.cancellation_fee_rate
         )
-        state.sunk_cost += item.price - refund
+        state.sunk_cost += booked_price - refund
         state.spent = max(0.0, state.spent - refund)
         state.booked.remove(target)
         state.awaiting_revision = False
@@ -252,7 +260,8 @@ class TravelAgentEnv(gym.Env):
         ):
             return False, False, False, "schedule_conflict"
 
-        refund = existing.price if existing.refundable else existing.price * (
+        booked_price = state.booking_prices.get(source, existing.price)
+        refund = booked_price if existing.refundable else booked_price * (
             1.0 - self.config.cancellation_fee_rate
         )
         projected = state.spent - refund + candidate.price
@@ -261,7 +270,9 @@ class TravelAgentEnv(gym.Env):
 
         state.booked.remove(existing.index)
         state.booked.add(target)
-        state.sunk_cost += existing.price - refund
+        state.booking_prices.pop(existing.index, None)
+        state.booking_prices[target] = candidate.price
+        state.sunk_cost += booked_price - refund
         state.spent = projected
         state.rebooking_count += 1
         state.awaiting_revision = False
@@ -582,9 +593,10 @@ class TravelAgentEnv(gym.Env):
         ):
             return False
         refund = (
-            existing.price
+            state.booking_prices.get(source, existing.price)
             if existing.refundable
-            else existing.price * (1.0 - self.config.cancellation_fee_rate)
+            else state.booking_prices.get(source, existing.price)
+            * (1.0 - self.config.cancellation_fee_rate)
         )
         return state.spent - refund + candidate.price <= state.hard_budget()
 
@@ -610,6 +622,8 @@ class TravelAgentEnv(gym.Env):
             "trip_started": state.trip_started,
             "trip_completed": state.trip_completed,
             "disruptions": len(state.disruptions),
+            "market_steps": state.market_steps,
+            "depleted_inventory": state.depleted_inventory,
             "refundable_share": (
                 float(
                     np.mean(
@@ -628,6 +642,98 @@ class TravelAgentEnv(gym.Env):
         }
         info.update(self.reward_model.itinerary_metrics(state))
         return info
+
+    def observation_to_text(
+        self, observation: Optional[Dict[str, np.ndarray]] = None
+    ) -> str:
+        state = self._require_state()
+        observation = observation or self._observation()
+        visible_preferences = [
+            f"{theme}={observation['preferences'][index]:.2f}"
+            for index, theme in enumerate(THEMES)
+            if observation["preferences"][index] > 0
+        ]
+        lines = [
+            (
+                f"Trip to destination {state.request.destination} for "
+                f"{state.request.party_size} travelers and "
+                f"{state.request.duration_days} days."
+            ),
+            (
+                f"Budget ${state.request.budget:,.2f}; "
+                f"spent ${state.spent:,.2f}; "
+                f"hard limit ${state.hard_budget():,.2f}."
+            ),
+            (
+                f"Difficulty {state.difficulty}; day {state.current_day}/"
+                f"{state.request.duration_days}; patience "
+                f"{state.patience_remaining}."
+            ),
+            (
+                "Known preferences: "
+                + (", ".join(visible_preferences) or "none")
+            ),
+            "Visible inventory:",
+        ]
+        for item in state.inventory:
+            if not state.visible[item.index]:
+                continue
+            status = "available" if item.available else "unavailable"
+            booked = " booked" if item.index in state.booked else ""
+            lines.append(
+                f"  [{item.index}] {item.category.name.lower()} "
+                f"${item.price:,.2f} quality={item.quality:.2f} "
+                f"location={item.location:.2f} "
+                f"convenience={item.convenience:.2f} "
+                f"{'refundable' if item.refundable else 'nonrefundable'} "
+                f"{status}{booked}"
+            )
+        legal = [
+            action.name
+            for action in ActionType
+            if observation["action_mask"][action]
+        ]
+        lines.append("Legal actions: " + ", ".join(legal))
+        return "\n".join(lines)
+
+    @staticmethod
+    def action_from_text(text: str) -> Dict[str, int]:
+        normalized = text.strip().upper()
+        if not normalized:
+            raise ValueError("Action text cannot be empty")
+
+        action_name = normalized.split()[0]
+        try:
+            action = ActionType[action_name]
+        except KeyError as exc:
+            raise ValueError(f"Unknown action type: {action_name}") from exc
+
+        def parameter(name: str, default: Optional[int] = None) -> int:
+            match = re.search(rf"\b{name}\s*=\s*(\d+)\b", normalized)
+            if match:
+                return int(match.group(1))
+            if default is not None:
+                return default
+            raise ValueError(f"{action.name} requires {name.lower()}=<index>")
+
+        source = 0
+        target = 0
+        if action in {
+            ActionType.SELECT_FLIGHT,
+            ActionType.SELECT_HOTEL,
+            ActionType.SELECT_ACTIVITY,
+            ActionType.REMOVE_BOOKING,
+        }:
+            target = parameter("TARGET")
+        elif action in {ActionType.SWAP_BOOKING, ActionType.REBOOK}:
+            source = parameter("SOURCE")
+            target = parameter("TARGET")
+
+        return {
+            "action_type": int(action),
+            "source_index": source,
+            "target_index": target,
+        }
 
     def _require_state(self) -> TravelState:
         if self.state is None:

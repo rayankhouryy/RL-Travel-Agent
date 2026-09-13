@@ -128,7 +128,11 @@ def test_final_client_rejection_terminates_as_failure():
 
 
 def test_non_refundable_cancellation_charges_fee():
-    config = EnvironmentConfig(cancellation_fee_rate=0.20)
+    config = EnvironmentConfig(
+        cancellation_fee_rate=0.20,
+        price_drift_per_step=0.0,
+        depletion_probability=0.0,
+    )
     env = TravelAgentEnv(config)
     env.reset(seed=23)
     state = env.state
@@ -149,7 +153,12 @@ def test_non_refundable_cancellation_charges_fee():
 
 
 def test_overlapping_activity_is_rejected_and_masked():
-    env = TravelAgentEnv()
+    env = TravelAgentEnv(
+        EnvironmentConfig(
+            price_drift_per_step=0.0,
+            depletion_probability=0.0,
+        )
+    )
     observation, _ = env.reset(seed=24)
     observation, *_ = env.step(action(ActionType.SEARCH_ACTIVITIES))
     state = env.state
@@ -210,4 +219,3 @@ def test_difficulty_profiles_are_complete_and_ordered():
     assert [profile.step_limit for profile in profiles] == sorted(
         profile.step_limit for profile in profiles
     )
-

@@ -33,6 +33,8 @@ class EnvironmentConfig:
     acceptance_threshold: float = 0.58
     cancellation_fee_rate: float = 0.10
     refundable_premium: float = 0.15
+    price_drift_per_step: float = 0.002
+    depletion_probability: float = 0.004
     disruption_probability: float = 0.0
     difficulty: int = 1
     reward: RewardWeights = field(default_factory=RewardWeights)

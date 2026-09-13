@@ -23,6 +23,8 @@ class ClientPersona:
     quality_preference: float
     location_preference: float
     convenience_preference: float
+    quality_floor: float
+    preferred_pace: float
     expected_budget_usage: float
     budget_flexibility: float
     change_aversion: float
@@ -76,8 +78,11 @@ class TravelState:
     max_disruptions: int = 0
     step_limit: int = 40
     booked: Set[int] = field(default_factory=set)
+    booking_prices: Dict[int, float] = field(default_factory=dict)
     spent: float = 0.0
     sunk_cost: float = 0.0
+    market_steps: int = 0
+    depleted_inventory: int = 0
     step_count: int = 0
     search_count: int = 0
     proposal_count: int = 0

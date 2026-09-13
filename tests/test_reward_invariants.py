@@ -67,3 +67,23 @@ def test_realized_satisfaction_is_held_out(monkeypatch):
         return rewards
 
     assert reward_trace(False) == pytest.approx(reward_trace(True), abs=0.0)
+
+
+def test_realized_satisfaction_is_independent_of_latent_utility(monkeypatch):
+    env = TravelAgentEnv(EnvironmentConfig(disruption_probability=0.0))
+    policy = HeuristicPolicy()
+    observation, _ = env.reset(seed=303, options={"difficulty": 1})
+    terminated = truncated = False
+    while not (terminated or truncated):
+        observation, _, terminated, truncated, _ = env.step(
+            policy.act(observation)
+        )
+
+    baseline = env.reward_model.realized_satisfaction(env.state)
+    monkeypatch.setattr(
+        env.reward_model,
+        "latent_utility",
+        lambda state: 0.0,
+    )
+
+    assert env.reward_model.realized_satisfaction(env.state) == baseline

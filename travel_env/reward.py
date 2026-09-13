@@ -182,8 +182,50 @@ class RewardModel:
     def realized_satisfaction(self, state: TravelState) -> float:
         if not state.has_complete_itinerary():
             return 0.0
+        items = state.booked_items()
+        activities = [
+            item for item in items if item.category == InventoryCategory.ACTIVITY
+        ]
+        theme_fit = (
+            float(
+                np.mean(
+                    [
+                        np.dot(
+                            state.persona.preference_weights,
+                            item.theme_vector,
+                        )
+                        for item in activities
+                    ]
+                )
+            )
+            if activities
+            else 0.0
+        )
+        qualities = [item.quality for item in items]
+        quality = float(np.mean(qualities)) if qualities else 0.0
+        if qualities and min(qualities) < state.persona.quality_floor:
+            shortfall = state.persona.quality_floor - min(qualities)
+            quality *= max(0.15, 1.0 - 2.4 * shortfall)
+        location = float(np.mean([item.location for item in items]))
+        convenience = float(np.mean([item.convenience for item in items]))
+        pace = len(activities) / max(state.request.duration_days, 1)
+        pace_fit = float(
+            np.exp(-abs(pace - state.persona.preferred_pace) / 0.8)
+        )
+        target = state.request.budget * state.persona.expected_budget_usage
+        budget_fit = float(
+            np.exp(-abs(state.spent - target) / max(target, 1.0))
+        )
+        outcome = (
+            0.30 * min(1.0, 2.0 * theme_fit)
+            + 0.22 * quality
+            + 0.13 * location
+            + 0.10 * convenience
+            + 0.15 * pace_fit
+            + 0.10 * budget_fit
+        )
         robustness = float(
-            np.mean([1.0 if item.refundable else 0.35 for item in state.booked_items()])
+            np.mean([1.0 if item.refundable else 0.35 for item in items])
         )
         unresolved = len(state.active_disruption_targets() & state.booked)
         disruption_factor = max(0.0, 1.0 - 0.3 * unresolved)
@@ -193,7 +235,7 @@ class RewardModel:
         )
         return float(
             np.clip(
-                0.85 * self.latent_utility(state)
+                0.85 * outcome
                 + 0.15 * robustness * state.persona.disruption_tolerance,
                 0.0,
                 1.0,

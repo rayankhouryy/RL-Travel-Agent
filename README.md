@@ -8,6 +8,7 @@ constraints, rather than merely selecting cheap or highly rated inventory. It
 models the parts of travel planning that create meaningful decisions:
 
 - correlated price, quality, location, convenience, and scarcity
+- prices that drift and visible inventory that can disappear during deliberation
 - partially observed client preferences
 - hard budget, availability, and scheduling constraints
 - irreversible choices, cancellation costs, and finite client patience
@@ -16,6 +17,41 @@ models the parts of travel planning that create meaningful decisions:
 
 The original assessment prompt is preserved in
 [`docs/assessment-brief.md`](docs/assessment-brief.md).
+
+## Episode lifecycle
+
+```text
+RESET
+  |
+  v
+SEARCH -> BUILD -> PROPOSE
+                    |
+              +-----+------+
+              |            |
+          rejected      accepted
+              |            |
+              v            v
+           REVISE     ADVANCE_TRIP
+              |            |
+              +------> DISRUPTION?
+                           |
+                    +------+------+
+                    |             |
+                   no            yes
+                    |             |
+                    v             v
+             TRIP COMPLETE     REBOOK
+                    ^             |
+                    |         RE-PROPOSE
+                    +-------------+
+                    |
+                    v
+                  FINISH
+```
+
+Client rejection after the final available feedback round terminates as a
+failure. A time limit produces truncation rather than pretending the task
+reached a terminal state.
 
 ## Installation
 
@@ -72,6 +108,11 @@ party size, and noise. This creates realistic but imperfect correlations:
 expensive inventory is often better, but price is not a sufficient ranking
 signal.
 
+Unbooked offers evolve as the episode proceeds. Prices drift upward by a small
+seeded amount and visible inventory can be depleted. A booked quote is frozen
+in `booking_prices`, so later market movement cannot retroactively change its
+refund or cancellation cost.
+
 The simulator knows the client's complete utility weights and future stochastic
 events. The agent sees only stated preferences, information revealed by client
 feedback, searched inventory, current bookings, and active disruptions.
@@ -99,6 +140,19 @@ Supported verbs:
 `source_index` identifies the booking being replaced. `target_index` identifies
 the selected replacement or new inventory item. Unused parameters are set to
 zero.
+
+An optional text adapter maps concise commands into the same canonical action
+schema:
+
+```python
+action = env.action_from_text(
+    "REBOOK source=12 target=18"
+)
+text = env.observation_to_text(observation)
+```
+
+The adapter does not create a second environment interface; it only translates
+between text and structured actions.
 
 The observation includes an action-type mask, per-action target masks, and an
 explicit pairwise `(source, target)` mask for swaps and disruption recovery.
@@ -229,10 +283,22 @@ budget fit, and the weights $\eta_i$ come from the hidden persona.
 Evaluation additionally computes:
 
 $$
+O =
+0.30T
++0.22Q_f
++0.13L
++0.10C
++0.15P
++0.10B,
+$$
+
+followed by:
+
+$$
 U_{\text{realized}} =
 \mathrm{clip}
 \left(
-0.85U_{\text{latent}}+
+0.85O+
 0.15\rho_{\text{robustness}}d_{\text{tolerance}},
 0,1
 \right)
@@ -240,15 +306,16 @@ U_{\text{realized}} =
 \left(1-1.5\frac{\text{sunk cost}}{\text{hard budget}}\right)_+.
 $$
 
+Here $T$ is thematic outcome quality, $Q_f$ is quality after applying the
+client's minimum-quality floor, $L$ is location quality, $C$ is convenience,
+$P$ is pace fit, and $B$ is budget fit.
+
 This quantity is reported in `info` but never enters the reward calculation.
 An invariant test replaces `realized_satisfaction` with a constant and verifies
-that the complete reward trace remains unchanged.
-
-The metric is held out from optimization, but it is not fully independent:
-it deliberately reuses latent client utility before applying robustness,
-unresolved-disruption, and sunk-cost adjustments. A shared bug in the utility
-components could therefore affect both measures. A production evaluator should
-add an independently implemented outcome metric.
+that the complete reward trace remains unchanged. A second test replaces the
+training-time `latent_utility` implementation and verifies that realized
+satisfaction is unchanged. The two paths share raw environment state but no
+longer call each other.
 
 ### Shaping invariance check
 
@@ -265,6 +332,7 @@ spread to remain below `1e-9`. It also verifies that $\Phi(s_0)=0$ after reset.
 | Always choose the highest-rated option | Hard budget and schedule constraints still apply; quality utility is bounded |
 | Finish immediately | Completion requires a feasible itinerary and client acceptance |
 | Search forever | Searches have a step cost and do not change the shaping potential |
+| Delay decisions | Unbooked prices drift and visible offers can disappear |
 | Farm repeated feedback | Client patience and preference revelation are finite and monotonic |
 | Rebook repeatedly | Non-refundable inventory incurs cancellation costs |
 | Ignore a cancellation | Unavailable reservations stop satisfying completeness and reduce realized satisfaction |
@@ -364,25 +432,31 @@ One fixed-seed run produced:
 
 | Policy | Reward | Success | Realized satisfaction | Spend | Quality | Refundable share | Sunk-cost fraction |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Random | -0.604 | 0.00 | 0.165 | 2847 | 0.490 | 0.413 | 0.108 |
-| Cheapest | 8.612 | 0.70 | 0.546 | 2469 | 0.435 | 0.340 | 0.010 |
-| Quality maximizer | 12.060 | 0.86 | 0.548 | 3508 | 0.695 | 0.419 | 0.013 |
-| Non-refundable | 11.293 | 0.82 | 0.517 | 3190 | 0.617 | 0.058 | 0.018 |
-| Flexibility buyer | 11.562 | 0.85 | 0.589 | 3373 | 0.591 | 0.826 | 0.001 |
-| Heuristic | 12.055 | 0.86 | 0.562 | 3475 | 0.619 | 0.394 | 0.010 |
+| Random | -0.560 | 0.00 | 0.144 | 2738 | 0.498 | 0.501 | 0.093 |
+| Cheapest | 9.089 | 0.73 | 0.507 | 2196 | 0.436 | 0.368 | 0.010 |
+| Quality maximizer | 13.039 | 0.94 | 0.559 | 3179 | 0.719 | 0.404 | 0.012 |
+| Non-refundable | 13.164 | 0.95 | 0.541 | 2967 | 0.645 | 0.074 | 0.017 |
+| Flexibility buyer | 12.751 | 0.94 | 0.575 | 3042 | 0.603 | 0.858 | 0.000 |
+| Heuristic | 13.104 | 0.93 | 0.561 | 3150 | 0.643 | 0.422 | 0.009 |
 
-The reward-versus-realized rank correlation was `0.714`, showing that reward is
+The reward-versus-realized rank correlation was `0.486`, showing that reward is
 directionally useful but does not perfectly order downstream outcomes.
+
+The clearest mismatch is between the non-refundable and flexibility policies:
+the non-refundable policy receives slightly higher training reward (`13.164`
+versus `12.751`) while producing lower realized satisfaction (`0.541` versus
+`0.575`) and greater sunk loss. The paired probe below tests that difference on
+identical generated worlds.
 
 In the paired 200-episode probe, flexibility minus non-refundable produced:
 
 | Metric | Mean difference | Approximate 95% CI half-width |
 |---|---:|---:|
-| Reward | -0.6761 | 0.7716 |
-| Realized satisfaction | +0.0302 | 0.0217 |
-| Sunk-cost fraction | -0.0162 | 0.0026 |
-| Refundable share | +0.7625 | 0.0342 |
-| Spend | +158.65 | 67.26 |
+| Reward | -0.0304 | 0.7403 |
+| Realized satisfaction | +0.0375 | 0.0219 |
+| Sunk-cost fraction | -0.0184 | 0.0026 |
+| Refundable share | +0.7618 | 0.0324 |
+| Spend | +177.73 | 68.95 |
 
 The reward difference is inconclusive, while realized satisfaction improves
 and sunk loss falls. This is evidence of a remaining reward gap: flexibility
@@ -392,8 +466,9 @@ price.
 ## Configuration
 
 The default configuration is in [`configs/default.yaml`](configs/default.yaml).
-It controls episode length, inventory size, acceptance, disruption probability,
-difficulty, cancellation costs, and reward weights.
+It controls episode length, inventory size, acceptance, price drift, depletion,
+refundability premiums, disruption probability, difficulty, cancellation
+costs, and reward weights.
 
 ```python
 from travel_env import TravelAgentEnv
@@ -411,11 +486,12 @@ Unknown YAML keys raise an error instead of being silently ignored.
 pytest
 ```
 
-Tests cover deterministic resets, Gymnasium-compatible observations, inventory
-visibility, terminal preconditions, exact discounted shaping invariance,
-held-out metric isolation, search-spam behavior, cascading disruption effects,
-pairwise masks, exploit-policy separation, fragility detection, and baseline
-separation.
+The current suite contains 28 tests covering deterministic resets,
+Gymnasium-compatible observations, inventory visibility, terminal
+preconditions, exact discounted shaping invariance, two forms of held-out
+metric isolation, search-spam behavior, quote preservation, market evolution,
+cascading disruption effects, pairwise masks, the text adapter, exploit-policy
+separation, fragility detection, and baseline separation.
 
 ## Connecting real APIs
 
@@ -441,14 +517,28 @@ make them unsuitable as the only environment backend.
 Implemented:
 
 - Gymnasium environment and deterministic seeding
+- fixed structured observation and parameterized action spaces
+- action, target, and pairwise source-target masks
 - correlated inventory and continuous client personas
+- persona quality floors, preferred pace, and partial preference disclosure
 - partial observability and deterministic preference feedback
+- independently implemented realized-outcome evaluation
 - structural booking constraints
 - decomposed reward and held-out satisfaction
+- terminal-safe potential shaping with discounted-return invariance tests
+- deterministic market repricing and depletion
 - basic causal disruption propagation
+- four-level curriculum with feasibility-preserving generation
+- YAML configuration with unknown-key validation
 - random and heuristic baselines
-- fixed-seed evaluation and reward-profile comparison
+- exploit-specific policies and paired fragility analysis
+- reward-versus-outcome ranking diagnostics
+- structured-to-text observation and action adapter
+- fixed-seed, reward-profile, and curriculum evaluation commands
+- automated invariant, behavior, and integration tests
+- GitHub Actions testing on Python 3.9 and 3.11
 
-Next priorities are richer dependency graphs, multi-city curricula, explicit
-client communication intents, stronger adversarial reward tests, and broader
-task-distribution coverage.
+Deliberately out of scope for this submission are RL training, multi-city
+routing, live provider APIs, and visualization. Those additions would expand
+surface area substantially without strengthening the central environment and
+reward-design argument.

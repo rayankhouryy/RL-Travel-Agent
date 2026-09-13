@@ -58,6 +58,8 @@ class TravelWorldGenerator:
             quality_preference=float(rng.beta(2.2, 1.8)),
             location_preference=float(rng.beta(2.0, 2.0)),
             convenience_preference=float(rng.beta(2.0, 2.0)),
+            quality_floor=float(rng.uniform(0.25, 0.65)),
+            preferred_pace=float(rng.uniform(0.35, 1.10)),
             expected_budget_usage=float(rng.uniform(0.72, 0.96)),
             budget_flexibility=float(rng.uniform(0.02, 0.18)),
             change_aversion=float(rng.beta(2.0, 3.0)),
