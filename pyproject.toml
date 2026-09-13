@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "afterquery-travel-env"
+version = "0.1.0"
+description = "A Gymnasium environment for training and evaluating AI travel agents."
+requires-python = ">=3.9"
+dependencies = [
+    "gymnasium>=1.0,<2",
+    "numpy>=1.24,<3",
+    "PyYAML>=6,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+]
+
+[tool.setuptools.packages.find]
+include = ["travel_env*", "policies*", "evaluation*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

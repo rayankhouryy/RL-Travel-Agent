@@ -1,58 +1,279 @@
-# AfterQuery — AI Travel Agent RL Environment
+# AI Travel Agent RL Environment
 
+A Gymnasium environment for training and evaluating agents that plan trips,
+respond to client feedback, and recover from travel disruptions.
 
-### Role Context
+The environment rewards satisfying the traveler's intent under changing
+constraints, rather than merely selecting cheap or highly rated inventory. It
+models the parts of travel planning that create meaningful decisions:
 
-The AI Environments Engineer is responsible for designing and building the environments that our RL-trained agents operate in. This means turning real-world enterprise workflows, live data streams, and product surfaces into structured task environments that agents can learn from and be evaluated against.
+- correlated price, quality, location, convenience, and scarcity
+- partially observed client preferences
+- hard budget, availability, and scheduling constraints
+- irreversible choices, cancellation costs, and finite client patience
+- cancellations that can invalidate dependent itinerary items
+- terminal quality measured separately from held-out realized satisfaction
 
-Think of it as: the candidate builds the "world" that our AI agents live in, train in, and are measured against.
+The original assessment prompt is preserved in
+[`docs/assessment-brief.md`](docs/assessment-brief.md).
 
-### Day-to-Day Responsibilities
+## Installation
 
-- Designing task environments from enterprise workflows (travel booking, procurement, customer service, etc.)
-- Defining observation spaces, action spaces, and reward functions for RL agents
-- Building synthetic data generators that produce realistic, diverse task distributions
-- Creating evaluation harnesses that measure whether agents actually improve on real work
-- Collaborating with ML researchers on environment fidelity and reward shaping
-- Iterating on environments based on agent behavior (reward hacking, degenerate solutions, etc.)
+Python 3.9 or newer is required.
 
-### Scenario
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
 
-You are building an RL training environment for an AI travel agent. The agent works for a mid-size travel agency and handles end-to-end trip planning for clients. A typical episode looks like this: a client request comes in ("I need a week in Tokyo for two people in March, budget around $4k, we like food tours and historical sites") and the agent must:
+## Quick start
 
-1. **Search** available flights, hotels, and activities that match the client's constraints
-2. **Compose** a coherent itinerary that balances budget, preferences, logistics, and time
-3. **Present** to the client, handle feedback ("can you swap the hotel for something closer to Shibuya?"), and iterate
-4. **Handle** disruptions mid-trip: flight cancellations, hotel overbookings, weather closures — rebooking cascades that test recovery planning
+```python
+from travel_env import TravelAgentEnv
+from travel_env.actions import ActionType
 
-The interesting complexity here is multi-constraint optimization under uncertainty. Availability changes, client preferences are fuzzy, budgets are soft, and there are genuine tradeoffs between speed, cost, quality, and client satisfaction that have no single correct answer.
+env = TravelAgentEnv()
+observation, info = env.reset(seed=42)
 
-### Core Deliverables
+action = {
+    "action_type": int(ActionType.SEARCH_FLIGHTS),
+    "source_index": 0,
+    "target_index": 0,
+}
 
-No starter data is provided. Part of the job is figuring out what the world looks like. You build the environment AND the data that populates it. Specifically:
+observation, reward, terminated, truncated, info = env.step(action)
+```
 
-- **Environment Definition:** A Python module that implements the core environment interface (reset, step, observation space, action space). You may use Gymnasium-style interfaces or define your own — justify your choice. The environment should model the travel booking domain with enough fidelity that a trained agent would actually be useful.
-- **Reward Function:** Design a reward function that captures what "good travel planning" actually means. This is deliberately underspecified — you decide what matters. Client satisfaction? Budget efficiency? Itinerary coherence? Speed? Document your reasoning.
-- **Data Generator:** Build the synthetic world your environment runs on. This could be generated flight/hotel databases, client persona generators, disruption event samplers — whatever you need. The quality and thoughtfulness of your synthetic data is itself a signal.
-- **Evaluation Harness:** A script that runs a baseline policy (random or heuristic) through the environment and produces meaningful metrics. What you measure is up to you.
-- **README:** Explain your design, the tradeoffs you considered, what you would do with more time, and how this environment would need to change if connected to real APIs (Amadeus, Booking.com, etc.).
+The API follows Gymnasium:
 
-### Optional Enhancements (in priority order)
+```text
+reset(seed, options) -> observation, info
+step(action) -> observation, reward, terminated, truncated, info
+```
 
-1. A reward-shaping analysis showing how different objective weightings change agent behavior
-2. A disruption engine that generates cascading failures (cancelled flight -> missed connection -> hotel no-show -> rebooking chain) and tests how gracefully the environment handles them
-3. A client persona system with varied preferences, budgets, flexibility levels, and communication styles that produce meaningfully different episodes
-4. A curriculum that sequences episodes from simple (single-city, solo traveler, no disruptions) to complex (multi-city, group, tight budget, mid-trip chaos)
-5. A config-driven system that lets non-engineers modify the environment (new destinations, pricing rules, disruption types) without touching code
-6. An environment visualization showing the agent's planning process in real-time
+`terminated` means the client accepted a complete itinerary and the agent
+finished. `truncated` means the episode reached its configured step horizon.
 
-### Things to Think About
+## Environment model
 
-- **Observation, action, and state.** Build the observation space around what the agent actually needs to see — client request, available inventory, budget and time pressure. Build the action space around what a travel agent actually does — search, propose, book, swap, rebook, message. Make state evolve causally: booking debits budget, cancellations ripple downstream, time advances. If your environment makes it impossible to be incoherent, the agent will learn the right shape of the work.
-- **Reward design is the hardest part.** "Good" travel planning is multi-objective and there is no single right answer. Spend time thinking about what the cheapest exploit of your reward function is — always book the cheapest flight, always pick the highest-rated hotel, always finish in one step — and whether the environment structurally prevents that exploit, rather than just instructing against it.
-- **Synthetic world fidelity matters.** Prices should correlate with quality, geography should be consistent, availability should be uneven, and client requests should vary along multiple axes (budget, group size, fuzziness, communication style). A flat data distribution produces a flat agent. And recovery is where real travel-agent skill shows up — even a simple disruption mechanic gives the most interesting behavior somewhere to surface.
-- **Reason about tradeoffs out loud.** We care more about how you think than about a "correct" answer. Use the README to walk through what you considered, what you cut and why, and what you would build differently with more time. The follow-up call is a design discussion, not a stress test — there are no trick questions, and we are not looking for a single right answer.
+Each episode samples:
 
-### Follow-Up Discussion (45 Minutes)
+1. A continuous latent client persona.
+2. An under-specified observable request.
+3. A correlated market of flights, hotels, and activities.
+4. Availability and disruption risk.
 
-The discussion is not a gotcha session. It is a collaborative conversation where we learn how you think.
+Price is derived from latent quality, location, convenience, season, scarcity,
+party size, and noise. This creates realistic but imperfect correlations:
+expensive inventory is often better, but price is not a sufficient ranking
+signal.
+
+The simulator knows the client's complete utility weights and future stochastic
+events. The agent sees only stated preferences, information revealed by client
+feedback, searched inventory, current bookings, and active disruptions.
+
+## Action space
+
+The canonical action is a parameterized Gymnasium `Dict`:
+
+```python
+spaces.Dict({
+    "action_type": spaces.Discrete(12),
+    "source_index": spaces.Discrete(max_inventory),
+    "target_index": spaces.Discrete(max_inventory),
+})
+```
+
+Supported verbs:
+
+- `SEARCH_FLIGHTS`, `SEARCH_HOTELS`, `SEARCH_ACTIVITIES`
+- `SELECT_FLIGHT`, `SELECT_HOTEL`, `SELECT_ACTIVITY`
+- `REMOVE_BOOKING`, `SWAP_BOOKING`, `REBOOK`
+- `PROPOSE_ITINERARY`, `MESSAGE_CLIENT`, `FINISH`
+
+`source_index` identifies the booking being replaced. `target_index` identifies
+the selected replacement or new inventory item. Unused parameters are set to
+zero.
+
+The observation includes both an action-type mask and per-action target masks.
+The masks make a variable inventory usable through fixed Gymnasium spaces
+without hiding validity rules inside a particular policy implementation.
+
+## Observation space
+
+Observations contain fixed-size numeric tensors:
+
+- normalized request features
+- stated and revealed preference signals
+- budget, booking, patience, acceptance, and episode progress
+- a padded inventory slate
+- visibility, booking, disruption, action, and target masks
+
+Inventory features include category, relative price, quality, location,
+convenience, thematic attributes, schedule, refundability, and availability.
+Unsearched inventory is masked and represented by zero vectors.
+
+## Structural constraints
+
+The environment rejects impossible state transitions rather than making every
+violation purchasable through a reward penalty:
+
+- unavailable or unsearched inventory cannot be booked
+- flight and hotel slots cannot be duplicated
+- overlapping activities cannot be booked
+- hard budget overruns are rejected
+- swaps require a booked source and same-category replacement
+- incomplete or unaccepted itineraries cannot terminate successfully
+- disrupted reservations no longer count toward itinerary completeness
+
+These rules keep the environment causal and reduce dependence on fragile reward
+weights.
+
+## Reward
+
+Step reward combines:
+
+- a small action cost
+- potential-based progress shaping
+- a small valid-booking signal
+- invalid-action penalties
+- a decomposed terminal objective
+
+The potential is the fraction of required flight, hotel, and activity slots
+filled. Repeated searching does not increase it, so search loops accumulate cost
+instead of reward.
+
+Terminal reward includes:
+
+- latent preference match
+- temporal coherence
+- distance from persona-specific target spend
+- quality and convenience
+- disruption recovery
+- unresolved constraint violations
+
+Every step exposes `info["reward_components"]`. The environment also reports
+`realized_satisfaction`, a held-out metric that includes robustness and
+post-disruption outcomes. It is not identical to training reward.
+
+## Reward-hacking defenses
+
+| Potential exploit | Structural or reward defense |
+|---|---|
+| Book nothing to maximize money left | Budget score targets persona-specific expected spend; incomplete plans are penalized |
+| Always choose the cheapest option | Preference, quality, location, and convenience contribute to utility |
+| Always choose the highest-rated option | Hard budget and schedule constraints still apply; quality utility is bounded |
+| Finish immediately | Completion requires a feasible itinerary and client acceptance |
+| Search forever | Searches have a step cost and do not change the shaping potential |
+| Farm repeated feedback | Client patience and preference revelation are finite and monotonic |
+| Rebook repeatedly | Non-refundable inventory incurs cancellation costs |
+| Ignore a cancellation | Unavailable reservations stop satisfying completeness and reduce realized satisfaction |
+| Stack activities | Overlapping reservations are rejected structurally |
+
+## Disruptions
+
+The disruption engine currently models:
+
+- flight cancellation
+- hotel overbooking
+- weather closure
+
+A flight cancellation can invalidate already-booked activities that become
+unreachable after the changed arrival. The environment records the causal set
+on the disruption and requires the affected reservations to be rebooked.
+
+## Baselines and evaluation
+
+Run random and heuristic policies over the same seeded task distribution:
+
+```bash
+python -m evaluation.evaluate --policy both --episodes 200
+```
+
+Reported metrics include:
+
+- episode success and itinerary completion
+- reward and held-out realized satisfaction
+- preference match, quality, convenience, and spend
+- budget compliance and unresolved violations
+- invalid actions, steps, rebookings, and recovery
+
+The heuristic is intentionally simple. It searches all categories, scores
+visible feasible inventory, builds a complete plan, revises activities after
+feedback, rebooks disrupted reservations, obtains acceptance, and finishes.
+Its purpose is to verify that competent behavior materially outperforms random
+interaction for the intended reasons.
+
+## Reward-profile experiment
+
+```bash
+python -m evaluation.reward_sweep --episodes 200
+```
+
+The sweep compares budget, balanced, and experience-oriented reward and policy
+profiles. The output shows whether weighting changes produce measurable
+differences in spend, quality, preference fit, convenience, satisfaction,
+success, and reward.
+
+## Configuration
+
+The default configuration is in [`configs/default.yaml`](configs/default.yaml).
+It controls episode length, inventory size, acceptance, disruption probability,
+difficulty, cancellation costs, and reward weights.
+
+```python
+from travel_env import TravelAgentEnv
+from travel_env.config import EnvironmentConfig
+
+config = EnvironmentConfig.from_yaml("configs/default.yaml")
+env = TravelAgentEnv(config)
+```
+
+Unknown YAML keys raise an error instead of being silently ignored.
+
+## Testing
+
+```bash
+pytest
+```
+
+Tests cover deterministic resets, Gymnasium-compatible observations, inventory
+visibility, terminal preconditions, search-spam shaping, cascading disruption
+effects, and baseline separation.
+
+## Connecting real APIs
+
+The environment boundary should remain stable while the synthetic generator is
+replaced by provider adapters. A production integration would additionally
+need:
+
+- immutable offer snapshots and provider-specific offer IDs
+- quote expiration and explicit repricing transitions
+- idempotency keys for booking and cancellation
+- asynchronous confirmation and partial-failure states
+- rate limits, timeouts, retries, and provider error taxonomies
+- currency, tax, fee, timezone, and localization handling
+- credential isolation and audit logging
+- replayable recorded fixtures for deterministic training and evaluation
+
+Training should continue against snapshots or simulators. Live APIs are useful
+for data refresh and final evaluation, but their non-determinism and side effects
+make them unsuitable as the only environment backend.
+
+## Current scope
+
+Implemented:
+
+- Gymnasium environment and deterministic seeding
+- correlated inventory and continuous client personas
+- partial observability and deterministic preference feedback
+- structural booking constraints
+- decomposed reward and held-out satisfaction
+- basic causal disruption propagation
+- random and heuristic baselines
+- fixed-seed evaluation and reward-profile comparison
+
+Next priorities are richer dependency graphs, multi-city curricula, explicit
+client communication intents, stronger adversarial reward tests, and broader
+task-distribution coverage.

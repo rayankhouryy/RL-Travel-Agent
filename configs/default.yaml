@@ -1,0 +1,22 @@
+max_inventory: 32
+max_steps: 40
+min_activities: 2
+discount: 0.99
+client_patience: 4
+acceptance_threshold: 0.58
+cancellation_fee_rate: 0.10
+disruption_probability: 0.08
+difficulty: 1
+
+reward:
+  preference: 3.0
+  coherence: 2.0
+  budget: 1.5
+  quality: 1.5
+  convenience: 1.0
+  recovery: 2.0
+  violations: 2.5
+  step_cost: 0.01
+  invalid_action: 0.25
+  incomplete_finish: 3.0
+  useful_booking: 0.05

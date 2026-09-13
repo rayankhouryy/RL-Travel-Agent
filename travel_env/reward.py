@@ -1,0 +1,202 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict
+
+import numpy as np
+
+from travel_env.config import EnvironmentConfig
+from travel_env.models import InventoryCategory, TravelState
+
+
+@dataclass(frozen=True)
+class RewardResult:
+    total: float
+    components: Dict[str, float]
+
+
+class RewardModel:
+    def __init__(self, config: EnvironmentConfig):
+        self.config = config
+
+    def potential(self, state: TravelState) -> float:
+        counts = state.booking_counts()
+        flight = min(1.0, float(counts[InventoryCategory.FLIGHT]))
+        hotel = min(1.0, float(counts[InventoryCategory.HOTEL]))
+        activities = min(
+            1.0,
+            counts[InventoryCategory.ACTIVITY] / self.config.min_activities,
+        )
+        return (flight + hotel + activities) / 3.0
+
+    def transition(
+        self,
+        previous_potential: float,
+        state: TravelState,
+        *,
+        valid: bool,
+        useful_booking: bool,
+        finishing: bool,
+    ) -> RewardResult:
+        weights = self.config.reward
+        shaping = (
+            self.config.discount * self.potential(state) - previous_potential
+        )
+        components = {
+            "step_cost": -weights.step_cost,
+            "potential_shaping": shaping,
+            "useful_booking": weights.useful_booking if useful_booking else 0.0,
+            "invalid_action": -weights.invalid_action if not valid else 0.0,
+            "terminal": 0.0,
+        }
+
+        if finishing:
+            if not state.has_complete_itinerary(self.config.min_activities):
+                components["terminal"] = -weights.incomplete_finish
+            elif not state.client_accepted:
+                components["terminal"] = -0.5 * weights.incomplete_finish
+            else:
+                terminal = self.terminal_components(state)
+                components.update(terminal)
+                components["terminal"] = sum(terminal.values())
+
+        return RewardResult(
+            total=float(sum(components.values())),
+            components={key: float(value) for key, value in components.items()},
+        )
+
+    def terminal_components(self, state: TravelState) -> Dict[str, float]:
+        weights = self.config.reward
+        metrics = self.itinerary_metrics(state)
+        return {
+            "preference": weights.preference * metrics["preference_match"],
+            "coherence": weights.coherence * metrics["coherence"],
+            "budget": weights.budget * metrics["budget_score"],
+            "quality": weights.quality * metrics["quality"],
+            "convenience": weights.convenience * metrics["convenience"],
+            "recovery": weights.recovery * metrics["recovery"],
+            "violations": -weights.violations * metrics["violations"],
+        }
+
+    def itinerary_metrics(self, state: TravelState) -> Dict[str, float]:
+        items = state.booked_items()
+        activities = [
+            item for item in items if item.category == InventoryCategory.ACTIVITY
+        ]
+        preference = (
+            float(
+                np.mean(
+                    [
+                        np.dot(
+                            state.persona.preference_weights,
+                            item.theme_vector,
+                        )
+                        for item in activities
+                    ]
+                )
+            )
+            if activities
+            else 0.0
+        )
+        quality = float(np.mean([item.quality for item in items])) if items else 0.0
+        convenience = (
+            float(np.mean([item.convenience for item in items])) if items else 0.0
+        )
+        target_spend = (
+            state.request.budget * state.persona.expected_budget_usage
+        )
+        budget = float(
+            np.exp(-abs(state.spent - target_spend) / max(target_spend, 1.0))
+        )
+        coherence = 1.0 if not self._has_overlap(activities) else 0.0
+        active_failures = len(state.active_disruption_targets() & state.booked)
+        recovery = 1.0 if state.disruptions and active_failures == 0 else 0.0
+        violations = float(active_failures)
+
+        return {
+            "preference_match": preference,
+            "coherence": coherence,
+            "budget_score": budget,
+            "quality": quality,
+            "convenience": convenience,
+            "recovery": recovery,
+            "violations": violations,
+        }
+
+    def latent_utility(self, state: TravelState) -> float:
+        items = state.booked_items()
+        if not items:
+            return 0.0
+        activities = [
+            item for item in items if item.category == InventoryCategory.ACTIVITY
+        ]
+        theme_fit = (
+            float(
+                np.mean(
+                    [
+                        np.dot(state.persona.preference_weights, item.theme_vector)
+                        for item in activities
+                    ]
+                )
+            )
+            if activities
+            else 0.0
+        )
+        quality = float(np.mean([item.quality for item in items]))
+        location = float(np.mean([item.location for item in items]))
+        convenience = float(np.mean([item.convenience for item in items]))
+        target = state.request.budget * state.persona.expected_budget_usage
+        budget_fit = float(np.exp(-abs(state.spent - target) / max(target, 1.0)))
+        values = np.array(
+            [
+                min(1.0, 2.0 * theme_fit),
+                quality,
+                location,
+                convenience,
+                budget_fit,
+            ],
+            dtype=np.float64,
+        )
+        importance = np.array(
+            [
+                1.5,
+                state.persona.quality_preference,
+                state.persona.location_preference,
+                state.persona.convenience_preference,
+                state.persona.budget_sensitivity,
+            ],
+            dtype=np.float64,
+        )
+        return float(
+            np.clip(
+                np.dot(values, importance) / max(importance.sum(), 1e-8),
+                0.0,
+                1.0,
+            )
+        )
+
+    def realized_satisfaction(self, state: TravelState) -> float:
+        if not state.has_complete_itinerary(self.config.min_activities):
+            return 0.0
+        robustness = float(
+            np.mean([1.0 if item.refundable else 0.35 for item in state.booked_items()])
+        )
+        unresolved = len(state.active_disruption_targets() & state.booked)
+        disruption_factor = max(0.0, 1.0 - 0.3 * unresolved)
+        return float(
+            np.clip(
+                0.85 * self.latent_utility(state)
+                + 0.15 * robustness * state.persona.disruption_tolerance,
+                0.0,
+                1.0,
+            )
+            * disruption_factor
+        )
+
+    @staticmethod
+    def _has_overlap(activities: list) -> bool:
+        ordered = sorted(activities, key=lambda item: item.start_hour)
+        return any(
+            current.end_hour > following.start_hour
+            for current, following in zip(ordered, ordered[1:])
+        )
