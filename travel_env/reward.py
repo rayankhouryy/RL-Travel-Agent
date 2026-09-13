@@ -29,7 +29,7 @@ class RewardModel:
             / max(state.required_activities, 1),
         )
         coverage = (flight + hotel + activities) / 3.0
-        return self.config.reward.shaping_scale * coverage
+        return coverage
 
     def transition(
         self,
@@ -37,32 +37,31 @@ class RewardModel:
         state: TravelState,
         *,
         valid: bool,
-        useful_booking: bool,
         finishing: bool,
         terminal: bool,
     ) -> RewardResult:
         weights = self.config.reward
         next_potential = 0.0 if terminal else self.potential(state)
-        shaping = self.config.discount * next_potential - previous_potential
+        shaping = weights.shaping_scale * (
+            self.config.discount * next_potential - previous_potential
+        )
         components = {
             "step_cost": -weights.step_cost,
             "potential_shaping": shaping,
-            "useful_booking": weights.useful_booking if useful_booking else 0.0,
             "invalid_action": -weights.invalid_action if not valid else 0.0,
-            "terminal": 0.0,
         }
 
         if finishing:
             if not valid:
-                components["terminal"] = -weights.incomplete_finish
+                components["terminal_failure"] = -weights.incomplete_finish
             elif not state.has_complete_itinerary():
-                components["terminal"] = -weights.incomplete_finish
+                components["terminal_failure"] = -weights.incomplete_finish
             elif not state.client_accepted:
-                components["terminal"] = -0.5 * weights.incomplete_finish
+                components["terminal_failure"] = (
+                    -0.5 * weights.incomplete_finish
+                )
             else:
-                terminal = self.terminal_components(state)
-                components.update(terminal)
-                components["terminal"] = sum(terminal.values())
+                components.update(self.terminal_components(state))
 
         return RewardResult(
             total=float(sum(components.values())),
@@ -73,13 +72,11 @@ class RewardModel:
         weights = self.config.reward
         metrics = self.itinerary_metrics(state)
         return {
-            "preference": weights.preference * metrics["preference_match"],
-            "coherence": weights.coherence * metrics["coherence"],
+            "preference": weights.preference * self.latent_utility(state),
             "budget": weights.budget * metrics["budget_score"],
             "quality": weights.quality * metrics["quality"],
             "convenience": weights.convenience * metrics["convenience"],
             "recovery": weights.recovery * metrics["recovery"],
-            "violations": -weights.violations * metrics["violations"],
         }
 
     def itinerary_metrics(self, state: TravelState) -> Dict[str, float]:
@@ -110,7 +107,10 @@ class RewardModel:
             state.request.budget * state.persona.expected_budget_usage
         )
         budget = float(
-            np.exp(-abs(state.spent - target_spend) / max(target_spend, 1.0))
+            np.exp(
+                -max(state.spent - target_spend, 0.0)
+                / max(target_spend, 1.0)
+            )
         )
         coherence = 1.0 if not self._has_overlap(activities) else 0.0
         active_failures = len(state.active_disruption_targets() & state.booked)
@@ -150,7 +150,9 @@ class RewardModel:
         location = float(np.mean([item.location for item in items]))
         convenience = float(np.mean([item.convenience for item in items]))
         target = state.request.budget * state.persona.expected_budget_usage
-        budget_fit = float(np.exp(-abs(state.spent - target) / max(target, 1.0)))
+        budget_fit = float(
+            np.exp(-max(state.spent - target, 0.0) / max(target, 1.0))
+        )
         values = np.array(
             [
                 min(1.0, 2.0 * theme_fit),
@@ -214,7 +216,7 @@ class RewardModel:
         )
         target = state.request.budget * state.persona.expected_budget_usage
         budget_fit = float(
-            np.exp(-abs(state.spent - target) / max(target, 1.0))
+            np.exp(-max(state.spent - target, 0.0) / max(target, 1.0))
         )
         outcome = (
             0.30 * min(1.0, 2.0 * theme_fit)
@@ -236,7 +238,9 @@ class RewardModel:
         return float(
             np.clip(
                 0.85 * outcome
-                + 0.15 * robustness * state.persona.disruption_tolerance,
+                + 0.15
+                * robustness
+                * state.persona.disruption_sensitivity,
                 0.0,
                 1.0,
             )

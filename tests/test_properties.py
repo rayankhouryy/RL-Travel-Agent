@@ -1,6 +1,7 @@
 import copy
 
 import numpy as np
+import pytest
 
 from policies import RandomPolicy
 from travel_env import TravelAgentEnv
@@ -87,8 +88,11 @@ def test_random_valid_transitions_preserve_core_invariants():
         previous_booking_prices = {}
         terminated = truncated = False
         while not (terminated or truncated):
-            observation, _, terminated, truncated, info = env.step(
+            observation, reward, terminated, truncated, info = env.step(
                 policy.act(observation)
+            )
+            assert reward == pytest.approx(
+                sum(info["reward_components"].values())
             )
             state = env.state
             assert state.spent <= state.hard_budget() + 1e-6

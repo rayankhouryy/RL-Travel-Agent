@@ -11,12 +11,12 @@ while random interaction does not:
 | Metric | Random | Heuristic |
 |---|---:|---:|
 | Success | 0.00 | 1.00 |
-| Reward | -0.392 | 11.878 |
-| Realized satisfaction | 0.287 | 0.634 |
-| Preference match | 0.218 | 0.353 |
-| Quality | 0.507 | 0.727 |
-| Mean steps | 38.30 | 14.21 |
-| Invalid actions | 1.83 | 0.00 |
+| Reward | -0.858 | 5.333 |
+| Realized satisfaction | 0.293 | 0.652 |
+| Preference match | 0.210 | 0.346 |
+| Quality | 0.506 | 0.729 |
+| Mean steps | 38.25 | 14.13 |
+| Invalid actions | 1.66 | 0.00 |
 
 Command:
 
@@ -30,24 +30,24 @@ At difficulty 3:
 
 | Policy | Reward | Success | Realized | Spend | Quality | Refundable share | Sunk fraction |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Random | -0.560 | 0.00 | 0.144 | 2738 | 0.498 | 0.501 | 0.093 |
-| Cheapest | 9.089 | 0.73 | 0.507 | 2196 | 0.436 | 0.368 | 0.010 |
-| Quality maximizer | 13.039 | 0.94 | 0.559 | 3179 | 0.719 | 0.404 | 0.012 |
-| Non-refundable | 13.164 | 0.95 | 0.541 | 2967 | 0.645 | 0.074 | 0.017 |
-| Flexibility buyer | 12.751 | 0.94 | 0.575 | 3042 | 0.603 | 0.858 | 0.000 |
-| Heuristic | 13.104 | 0.93 | 0.561 | 3150 | 0.643 | 0.422 | 0.009 |
+| Random | -1.426 | 0.00 | 0.146 | 2747 | 0.497 | 0.501 | 0.094 |
+| Cheapest | 4.508 | 0.90 | 0.514 | 2145 | 0.399 | 0.354 | 0.009 |
+| Quality maximizer | 5.434 | 0.93 | 0.565 | 3180 | 0.725 | 0.404 | 0.011 |
+| Non-refundable | 5.806 | 0.98 | 0.548 | 2968 | 0.644 | 0.059 | 0.017 |
+| Flexibility buyer | 5.494 | 0.96 | 0.585 | 3039 | 0.604 | 0.870 | 0.000 |
+| Heuristic | 5.588 | 0.93 | 0.569 | 3150 | 0.643 | 0.422 | 0.009 |
 
-Spearman correlation between reward rank and realized-outcome rank was `0.486`.
+Spearman correlation between reward rank and realized-outcome rank was `0.600`.
 
 The paired 200-episode flexibility-minus-non-refundable probe found:
 
 | Metric | Mean difference | Approximate 95% CI half-width |
 |---|---:|---:|
-| Reward | -0.0304 | 0.7403 |
-| Realized satisfaction | +0.0375 | 0.0219 |
-| Sunk-cost fraction | -0.0184 | 0.0026 |
-| Refundable share | +0.7618 | 0.0324 |
-| Spend | +177.73 | 68.95 |
+| Reward | -0.0169 | 0.3028 |
+| Realized satisfaction | +0.0379 | 0.0220 |
+| Sunk-cost fraction | -0.0187 | 0.0027 |
+| Refundable share | +0.7847 | 0.0314 |
+| Spend | +179.80 | 68.01 |
 
 Reward does not clearly prefer flexibility, while realized satisfaction and
 sunk loss do.
@@ -58,14 +58,30 @@ Ten independently spaced blocks of 50 paired episodes produced:
 
 | Metric | Mean block delta | Between-block standard deviation | Positive blocks |
 |---|---:|---:|---:|
-| Reward | -0.4371 | 0.4610 | 30% |
-| Realized satisfaction | +0.0291 | 0.0139 | 100% |
-| Sunk-cost fraction | -0.0157 | 0.0036 | 0% |
-| Success | -0.0200 | 0.0298 | 20% |
-| Spend | +125.61 | 74.20 | 90% |
+| Reward | -0.3198 | 0.2037 | 0% |
+| Realized satisfaction | +0.0284 | 0.0129 | 100% |
+| Sunk-cost fraction | -0.0155 | 0.0035 | 0% |
+| Success | -0.0280 | 0.0253 | 10% |
+| Spend | +134.85 | 61.15 | 100% |
 
 For sunk-cost fraction, zero positive blocks means all ten blocks favored
 flexibility through lower sunk loss.
+
+Reward-component deltas explain the aggregate difference:
+
+| Component | Flexibility minus non-refundable |
+|---|---:|
+| Persona-dependent preference | -0.0963 |
+| Budget | -0.0629 |
+| Quality | -0.0751 |
+| Convenience | -0.0258 |
+| Recovery | -0.0200 |
+| Failed-finish penalty | -0.0330 |
+| Step cost and shaping | -0.0066 |
+
+The flexibility policy pays an ex-ante premium and accepts somewhat weaker
+inventory on the training objective. The separately implemented outcome score
+values its lower sunk loss and stronger post-disruption robustness.
 
 Command:
 
@@ -80,7 +96,7 @@ python -m evaluation.multiseed \
 
 The curriculum increases hidden information, required activity coverage,
 scarcity, disruption count, and recovery horizon. Earlier fixed-seed evaluation
-showed success decreasing from 99% at level 1 to 65% at level 4,
+showed success decreasing from 100% at level 1 to 65% at level 4,
 while rebooking requirements rose and mask-following invalid actions remained
 zero.
 
@@ -149,11 +165,11 @@ Across 50 difficulty-2 episodes:
 
 | Metric | Value |
 |---|---:|
-| Oracle utility | 0.7474 |
-| Heuristic utility | 0.7038 |
-| Mean regret | 0.0436 |
-| Median regret | 0.0324 |
-| 90th-percentile regret | 0.1093 |
+| Oracle utility | 0.7628 |
+| Heuristic utility | 0.7165 |
+| Mean regret | 0.0463 |
+| Median regret | 0.0355 |
+| 90th-percentile regret | 0.1135 |
 | Heuristic success | 1.0000 |
 
 Command:
@@ -162,7 +178,13 @@ Command:
 python -m evaluation.oracle_regret \
   --episodes 50 \
   --difficulty 2
+
+python -m evaluation.oracle_regret \
+  --episodes 20 \
+  --difficulty 4
 ```
 
-The result shows measurable optimization headroom without describing a greedy
-or approximate solver as an oracle.
+At difficulty 4, a 20-episode run increases mean regret to `0.0673`, the
+90th-percentile regret to `0.1490`, and reduces heuristic success to `0.55`.
+This provides clearer learning headroom on the hidden-preference setting while
+remaining explicit that the oracle is exact only under its fixed-slot scope.

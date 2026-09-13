@@ -4,6 +4,7 @@ import pytest
 
 from policies import HeuristicPolicy
 from travel_env import TravelAgentEnv
+from travel_env.actions import ActionType
 from travel_env.config import EnvironmentConfig
 
 
@@ -42,6 +43,32 @@ def test_potential_shaping_preserves_discounted_return():
         returns.append(discounted_trace(config, seed=301))
 
     assert max(returns) - min(returns) < 1e-9
+
+
+def test_terminal_transition_applies_final_shaping_term():
+    config = EnvironmentConfig(disruption_probability=0.0)
+    env = TravelAgentEnv(config)
+    policy = HeuristicPolicy()
+    observation, _ = env.reset(seed=304, options={"difficulty": 1})
+
+    while True:
+        selected = policy.act(observation)
+        if selected["action_type"] == int(ActionType.FINISH):
+            previous_potential = env.reward_model.potential(env.state)
+            _, reward, terminated, truncated, info = env.step(selected)
+            break
+        observation, _, terminated, truncated, _ = env.step(selected)
+        assert not terminated
+        assert not truncated
+
+    assert terminated
+    assert not truncated
+    assert info["reward_components"]["potential_shaping"] == pytest.approx(
+        -config.reward.shaping_scale * previous_potential
+    )
+    assert reward == pytest.approx(
+        sum(info["reward_components"].values())
+    )
 
 
 def test_realized_satisfaction_is_held_out(monkeypatch):
@@ -87,3 +114,58 @@ def test_realized_satisfaction_is_independent_of_latent_utility(monkeypatch):
     )
 
     assert env.reward_model.realized_satisfaction(env.state) == baseline
+
+
+def test_disruption_sensitivity_increases_value_of_robustness():
+    env = TravelAgentEnv(EnvironmentConfig(disruption_probability=0.0))
+    policy = HeuristicPolicy()
+    observation, _ = env.reset(seed=305, options={"difficulty": 1})
+    terminated = truncated = False
+    while not (terminated or truncated):
+        observation, _, terminated, truncated, _ = env.step(
+            policy.act(observation)
+        )
+
+    env.state.persona.disruption_sensitivity = 0.0
+    tolerant_score = env.reward_model.realized_satisfaction(env.state)
+    env.state.persona.disruption_sensitivity = 1.0
+    sensitive_score = env.reward_model.realized_satisfaction(env.state)
+
+    assert sensitive_score > tolerant_score
+
+
+def test_successful_terminal_reward_excludes_structural_invariants():
+    env = TravelAgentEnv(EnvironmentConfig(disruption_probability=0.0))
+    policy = HeuristicPolicy()
+    observation, _ = env.reset(seed=306, options={"difficulty": 1})
+    terminated = truncated = False
+    while not (terminated or truncated):
+        observation, _, terminated, truncated, _ = env.step(
+            policy.act(observation)
+        )
+
+    components = env.reward_model.terminal_components(env.state)
+    assert "coherence" not in components
+    assert "violations" not in components
+
+
+def test_terminal_preference_reward_depends_on_hidden_persona():
+    env = TravelAgentEnv(EnvironmentConfig(disruption_probability=0.0))
+    policy = HeuristicPolicy()
+    observation, _ = env.reset(seed=307, options={"difficulty": 1})
+    terminated = truncated = False
+    while not (terminated or truncated):
+        observation, _, terminated, truncated, _ = env.step(
+            policy.act(observation)
+        )
+
+    env.state.persona.quality_preference = 0.1
+    low_quality_priority = env.reward_model.terminal_components(
+        env.state
+    )["preference"]
+    env.state.persona.quality_preference = 3.0
+    high_quality_priority = env.reward_model.terminal_components(
+        env.state
+    )["preference"]
+
+    assert high_quality_priority != low_quality_priority

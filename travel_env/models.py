@@ -28,7 +28,7 @@ class ClientPersona:
     expected_budget_usage: float
     budget_flexibility: float
     change_aversion: float
-    disruption_tolerance: float
+    disruption_sensitivity: float
     communication_style: int
 
 

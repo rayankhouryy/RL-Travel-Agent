@@ -81,7 +81,7 @@ class TravelAgentEnv(gym.Env):
 
         previous_potential = self.reward_model.potential(state)
         state.step_count += 1
-        valid, useful_booking, finishing, reason = self._apply_action(action)
+        valid, _, finishing, reason = self._apply_action(action)
 
         if not valid:
             state.invalid_actions += 1
@@ -115,7 +115,6 @@ class TravelAgentEnv(gym.Env):
             previous_potential,
             state,
             valid=valid,
-            useful_booking=useful_booking,
             finishing=finishing,
             terminal=state.done,
         )

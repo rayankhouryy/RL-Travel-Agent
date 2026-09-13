@@ -13,7 +13,6 @@ from travel_env.config import EnvironmentConfig, RewardWeights
 PROFILES = {
     "budget": RewardWeights(
         preference=1.0,
-        coherence=2.0,
         budget=5.0,
         quality=1.0,
         convenience=1.0,
@@ -21,7 +20,6 @@ PROFILES = {
     "balanced": RewardWeights(),
     "experience": RewardWeights(
         preference=5.0,
-        coherence=2.0,
         budget=1.0,
         quality=3.0,
         convenience=2.0,
@@ -98,4 +96,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

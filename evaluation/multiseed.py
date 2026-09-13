@@ -6,7 +6,7 @@ from typing import Dict, List
 
 import numpy as np
 
-from evaluation.reward_hacking import run_episode
+from evaluation.reward_hacking import REWARD_COMPONENTS, run_episode
 from policies import FlexibilityBuyerPolicy, NonRefundablePolicy
 from travel_env.config import EnvironmentConfig
 
@@ -17,6 +17,7 @@ METRICS = (
     "sunk_fraction",
     "success",
     "spend",
+    *(f"component_{name}" for name in REWARD_COMPONENTS),
 )
 
 
@@ -94,4 +95,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

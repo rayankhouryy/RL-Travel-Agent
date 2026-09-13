@@ -50,20 +50,20 @@ SEARCH -> BUILD -> PROPOSE
    disappear, booked quotes remain immutable, and disruptions invalidate
    dependent reservations.
 4. **Reward quality is tested empirically.** Exploit policies, shaping
-   invariance, held-out outcomes, paired experiments, and a privileged oracle
-   test the environment rather than assuming the reward is correct.
+   invariance, held-out outcomes, paired experiments, and an exact fixed-slot
+   oracle test the environment rather than assuming the reward is correct.
 
 ## Headline evidence
 
 | Question | Result | Interpretation |
 |---|---:|---|
 | Does competent behavior beat random? | 100% vs 0% success | The environment separates planning competence from random interaction |
-| Does difficulty scale? | 99% to 65% heuristic success from level 1 to 4 | Harder levels require more information and recovery |
+| Does difficulty scale? | 100% to 65% heuristic success from level 1 to 4 | Harder levels require more information and recovery |
 | Are masks sound? | 0 invalid heuristic actions across curriculum evaluation | Policy-visible validity matches environment transitions |
 | Is shaping policy invariant? | Discounted-return spread below `1e-9` | Terminal potential and discounting are handled correctly |
-| Does flexibility improve outcomes? | `+0.0291` mean satisfaction across 10 seed blocks | Refundability has consistent downstream value |
-| Does reward fully price flexibility? | `-0.4371` mean reward difference | The training reward underprices that value |
-| How close is the heuristic to a privileged oracle? | Mean utility regret `0.0436` | The heuristic is strong but leaves measurable headroom |
+| Does flexibility improve outcomes? | `+0.0284` mean satisfaction across 10 seed blocks | Refundability has consistent downstream value |
+| Does reward fully price flexibility? | `-0.3198` mean reward difference | Ex-ante itinerary costs remain in tension with realized robustness |
+| How close is the heuristic to an exact fixed-slot oracle? | Mean regret `0.0463` at level 2 and `0.0673` at level 4 | Harder hidden-preference tasks retain measurable headroom |
 | How fast is the environment? | About `3.3k` steps/s at inventory size 32 | The Python implementation is suitable for local rollout experiments |
 
 Results are deterministic for their documented seed ranges but are not claims
@@ -170,25 +170,29 @@ fixed for cancellation and refund accounting.
 
 ## Reward and outcome evaluation
 
-The transition reward combines action cost, invalid-action cost, a small useful
-booking signal, and potential-based shaping:
+The complete transition reward combines action cost, invalid-action cost,
+potential-based shaping, and finish-dependent reward:
 
-$$
+```math
 r_t =
 -c_{\mathrm{step}}
 -c_{\mathrm{invalid}}\mathbf{1}[\mathrm{invalid}]
-+b_{\mathrm{booking}}\mathbf{1}[\mathrm{useful}]
-+\gamma\Phi(s_{t+1})-\Phi(s_t).
-$$
++\beta\left(\gamma\Phi(s_{t+1})-\Phi(s_t)\right)
++\mathbf{1}[\mathrm{success}]R_T
+-\mathbf{1}[\mathrm{completion\ failure}]c_{\mathrm{failure}}.
+```
 
-True terminal states use $\Phi(s_T)=0$. The test suite verifies that discounted
-return is invariant across shaping scales `0.0`, `0.25`, and `1.0`.
+The shaping term is applied on every transition, including the terminal
+transition, where $\Phi(s_T)=0$. The test suite verifies that discounted return
+is invariant across shaping scales `0.0`, `0.25`, and `1.0`. There is no
+separate booking bonus, so book/remove churn cannot create positive return.
 
-Terminal reward combines preference fit, coherence, budget fit, quality,
-convenience, recovery, and unresolved violations. Separately implemented
-realized satisfaction evaluates pace, quality-floor failures, robustness,
-sunk cost, and post-disruption completion. Tests verify that neither
-implementation calls into the other.
+Terminal reward combines persona-dependent latent utility, one-sided budget
+fit, quality, convenience, and recovery. Coherence and unresolved failures are
+structural validity checks rather than successful-terminal reward terms.
+Separately implemented realized satisfaction evaluates pace, quality-floor
+failures, robustness, sunk cost, and post-disruption completion. It is exposed
+only through `info`, not through policy observations or reward.
 
 The full equations, assumptions, exploit table, and derivation are in
 [`docs/reward-design.md`](docs/reward-design.md).
@@ -280,7 +284,7 @@ Implemented:
 - immutable booked quotes and sunk-cost accounting
 - structural constraints and causal disruptions
 - four-level curriculum
-- potential-based shaping and independent outcome evaluation
+- potential-based shaping and separately implemented outcome evaluation
 - adversarial policies, multi-seed analysis, throughput profiling, and oracle regret
 - YAML configuration, text adapter, tests, and CI
 

@@ -28,6 +28,18 @@ POLICIES = {
     "heuristic": lambda seed: HeuristicPolicy(),
 }
 
+REWARD_COMPONENTS = (
+    "step_cost",
+    "potential_shaping",
+    "invalid_action",
+    "terminal_failure",
+    "preference",
+    "budget",
+    "quality",
+    "convenience",
+    "recovery",
+)
+
 
 def run_episode(
     config: EnvironmentConfig,
@@ -39,6 +51,7 @@ def run_episode(
     policy = policy_factory(seed)
     observation, _ = env.reset(seed=seed, options={"difficulty": difficulty})
     total_reward = 0.0
+    component_totals = defaultdict(float)
     terminated = truncated = False
     info = {}
     while not (terminated or truncated):
@@ -46,7 +59,9 @@ def run_episode(
             policy.act(observation)
         )
         total_reward += reward
-    return {
+        for component, value in info["reward_components"].items():
+            component_totals[component] += value
+    result = {
         "reward": total_reward,
         "success": float(terminated and info["client_accepted"]),
         "realized": info["realized_satisfaction"],
@@ -56,6 +71,13 @@ def run_episode(
         "refundable_share": info["refundable_share"],
         "sunk_fraction": info["sunk_cost_fraction"],
     }
+    result.update(
+        {
+            f"component_{component}": component_totals[component]
+            for component in REWARD_COMPONENTS
+        }
+    )
+    return result
 
 
 def aggregate(rows: Iterable[Dict[str, float]]) -> Dict[str, float]:
@@ -134,9 +156,10 @@ def fragility_probe(
             "sunk_fraction",
             "refundable_share",
             "spend",
+            *(f"component_{name}" for name in REWARD_COMPONENTS),
         ):
             differences[metric].append(
-                flexible[metric] - nonrefundable[metric]
+                flexible.get(metric, 0.0) - nonrefundable.get(metric, 0.0)
             )
     return {
         metric: confidence_interval(values)

@@ -2,36 +2,39 @@
 
 ## Transition reward
 
-For a nonterminal transition:
+The complete transition reward is:
 
 ```math
 r_t =
 -c_{\mathrm{step}}
 -c_{\mathrm{invalid}}\mathbf{1}[\mathrm{invalid}]
-+b_{\mathrm{booking}}\mathbf{1}[\mathrm{useful\ booking}]
-+\gamma\Phi(s_{t+1})-\Phi(s_t).
++\beta\left(\gamma\Phi(s_{t+1})-\Phi(s_t)\right)
++\mathbf{1}[\mathrm{success}]R_T
+-\mathbf{1}[\mathrm{completion\ failure}]c_{\mathrm{failure}}.
 ```
 
-The potential is scaled feasible itinerary coverage:
+The potential is feasible itinerary coverage:
 
 ```math
 \Phi(s)=
-\alpha\frac{
+\frac{
 \mathbf{1}[\mathrm{flight}]
 +\mathbf{1}[\mathrm{hotel}]
 +\min(n_{\mathrm{activities}}/n_{\mathrm{required}},1)
 }{3}.
 ```
 
-At a true terminal state, $\Phi(s_T)=0$. For a fixed trajectory:
+The shaping scale $\beta$ is configured separately from the potential. The
+shaping term is applied on every transition, including the terminal transition,
+where $\Phi(s_T)=0$. For a fixed trajectory:
 
 ```math
 \sum_{t=0}^{T-1}\gamma^t
-\left(
+\beta\left(
 \gamma\Phi(s_{t+1})-\Phi(s_t)
 \right)
 =
--\Phi(s_0)+\gamma^T\Phi(s_T).
+\beta\left(-\Phi(s_0)+\gamma^T\Phi(s_T)\right).
 ```
 
 The initial itinerary is empty, so $\Phi(s_0)=0$. With terminal potential also
@@ -46,25 +49,27 @@ Successful completion receives:
 
 ```math
 R_T =
-w_pP+w_cC+w_bB+w_qQ+w_vV+w_rR-w_xX,
+w_pU_{\mathrm{latent}}+w_bB+w_qQ+w_vV+w_rR,
 ```
 
 where:
 
-- $P$: latent preference match
-- $C$: schedule coherence
+- $U_{\mathrm{latent}}$: persona-dependent latent client utility
 - $B$: budget fit
 - $Q$: quality
 - $V$: convenience
 - $R$: disruption recovery
-- $X$: unresolved disruption violations
 
-Budget fit targets expected spending rather than maximizing money left:
+Coherence and unresolved disruption failures are enforced structurally, so they
+cannot vary on a valid successful finish and do not appear in $R_T$.
+
+Budget fit penalizes only spending above the persona's expected target. Finding
+an equally good itinerary below the target is not penalized:
 
 ```math
 B =
 \exp\left(
--\frac{|\mathrm{spend}-\mathrm{target\ spend}|}
+-\frac{\max(\mathrm{spend}-\mathrm{target\ spend},0)}
 {\max(\mathrm{target\ spend},1)}
 \right).
 ```
@@ -79,7 +84,7 @@ U_{\mathrm{latent}} =
 where the hidden persona weights theme fit, quality, location, convenience,
 and budget fit.
 
-## Independently implemented realized outcome
+## Separately implemented realized outcome
 
 The outcome evaluator first calculates:
 
@@ -109,7 +114,7 @@ U_{\mathrm{realized}} =
 \mathrm{clip}
 \left(
 0.85O+
-0.15\rho_{\mathrm{robustness}}d_{\mathrm{tolerance}},
+0.15\rho_{\mathrm{robustness}}d_{\mathrm{sensitivity}},
 0,1
 \right)
 \left(1-0.3n_{\mathrm{unresolved}}\right)_+
@@ -118,20 +123,24 @@ U_{\mathrm{realized}} =
 \right)_+.
 ```
 
-Realized satisfaction is reported through `info` and does not enter the reward.
-Tests replace each implementation independently and verify that reward and
-realized outcome remain isolated.
+Higher $d_{\mathrm{sensitivity}}$ means the client values disruption protection
+more strongly. Realized satisfaction is reported through `info` for evaluation;
+it is not included in the policy observation or reward. Tests replace each
+implementation separately and verify that reward and realized outcome remain
+isolated. The two measures are not claimed to be statistically independent:
+they evaluate the same simulated trip and intentionally share some primitives.
 
 ## Reward-hacking defenses
 
 | Exploit | Defense |
 |---|---|
-| Book nothing | Incomplete itinerary penalty and target-spend budget score |
+| Book nothing | Successful completion structurally requires a complete itinerary |
 | Always cheapest | Preference, quality floor, location, pace, and convenience |
 | Always highest-rated | Hard budget and scheduling constraints |
 | Finish immediately | Client acceptance and trip completion are required |
 | Search forever | No potential increase; prices drift and inventory depletes |
 | Farm feedback | Patience and preference revelation are finite |
+| Book/remove churn | No booking bonus; shaping telescopes and step costs make the cycle negative |
 | Rebook repeatedly | Cancellation fees and sunk-cost accounting |
 | Ignore disruptions | Broken reservations stop satisfying completeness |
 | Stack activities | Overlapping reservations are rejected |
@@ -143,20 +152,30 @@ The suite checks:
 
 - $\Phi(s_0)=0$
 - terminal potential is zero
+- terminal transitions include the final negative shaping term
 - discounted return is invariant across shaping scales
+- reward equals the sum of its reported components on every tested transition
+- book/remove churn has negative discounted return
 - every unaccepted terminal path has negative reward
 - changing realized satisfaction cannot change reward
 - changing latent utility cannot change realized satisfaction
+- hidden persona weights change successful terminal reward
 - exploit policies produce measurably different behavior
 - flexibility changes held-out outcomes and sunk losses on paired worlds
+- heuristic solutions are compared with an exact fixed-slot oracle
 
 ## Remaining reward gap
 
-The non-refundable policy can receive slightly higher training reward while
-producing lower realized satisfaction and greater sunk loss than the
-flexibility policy. This is intentional evidence that the evaluator can expose
-a weakness in the training objective rather than merely confirm it.
+Across ten seed blocks, the flexibility policy produces higher realized
+satisfaction and lower sunk loss but lower training reward. Component
+decomposition shows why: it pays more and accepts modestly lower ex-ante
+quality, budget, convenience, and latent-intent scores in exchange for
+post-disruption robustness. This is a concrete objective tradeoff rather than
+an unexplained aggregate mismatch.
 
 One possible future correction is a small proposal-time robustness component.
 That change should only be accepted after rerunning the paired probe to verify
 that it closes the gap without making refundability universally optimal.
+Any such component must use ex-ante information such as refundability,
+cancellation penalties, and estimated risk rather than privileged knowledge of
+future disruptions.

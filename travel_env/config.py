@@ -11,16 +11,13 @@ import yaml
 class RewardWeights:
     shaping_scale: float = 0.25
     preference: float = 3.0
-    coherence: float = 2.0
     budget: float = 1.5
     quality: float = 1.5
     convenience: float = 1.0
     recovery: float = 2.0
-    violations: float = 2.5
     step_cost: float = 0.01
     invalid_action: float = 0.25
     incomplete_finish: float = 3.0
-    useful_booking: float = 0.05
 
 
 @dataclass(frozen=True)

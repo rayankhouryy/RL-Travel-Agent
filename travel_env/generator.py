@@ -63,7 +63,7 @@ class TravelWorldGenerator:
             expected_budget_usage=float(rng.uniform(0.72, 0.96)),
             budget_flexibility=float(rng.uniform(0.02, 0.18)),
             change_aversion=float(rng.beta(2.0, 3.0)),
-            disruption_tolerance=float(rng.beta(2.0, 2.0)),
+            disruption_sensitivity=float(rng.beta(2.0, 2.0)),
             communication_style=int(rng.integers(0, 4)),
         )
 
