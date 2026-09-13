@@ -63,6 +63,7 @@ The paired realized-outcome delta decomposes as:
 
 The explicit robustness term is the largest contributor by construction.
 Lower realized sunk loss supplies a separate record-derived benefit.
+Rounded components may differ from the reported aggregate by `0.0001`.
 
 ## Multi-seed robustness
 

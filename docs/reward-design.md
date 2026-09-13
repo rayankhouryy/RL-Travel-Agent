@@ -174,9 +174,10 @@ The suite checks:
 
 Across ten seed blocks, the flexibility policy produces higher realized
 satisfaction and lower sunk loss but lower training reward. Component
-decomposition shows that the difference is entirely in client utility and
-completion rate: flexibility pays more and accepts modestly lower ex-ante
-quality, budget, and convenience in exchange for post-disruption robustness.
+decomposition shows that the difference is overwhelmingly driven by client
+utility and completion rate: flexibility pays more and accepts modestly lower
+ex-ante quality, budget, and convenience in exchange for post-disruption
+robustness.
 The mean reward difference is `0.2305`, or `4.66%` of the non-refundable
 policy's mean successful terminal utility. This is a concrete product-objective
 tradeoff rather than an unexplained aggregate mismatch.
