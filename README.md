@@ -1,11 +1,14 @@
-# AI Travel Agent RL Environment
+# RL Travel Agent
 
-A Gymnasium environment for training and evaluating agents that plan trips,
-negotiate partially observed client preferences, operate in an evolving market,
-and recover from mid-trip disruptions.
+I built a Gymnasium environment for training and evaluating AI travel agents.
+Agents plan complete trips, uncover partially observed client preferences,
+operate in an evolving market, and recover from mid-trip disruptions.
 
-The environment rewards satisfying traveler intent under changing constraints,
-not merely selecting cheap or highly rated inventory.
+The project includes the environment, synthetic travel market, client personas,
+disruption engine, baseline policies, curriculum, evaluation harnesses, tests,
+and CI. Its reward system measures how well an itinerary satisfies traveler
+intent under changing constraints rather than rewarding agents for merely
+selecting cheap or highly rated inventory.
 
 ## Episode lifecycle
 
@@ -283,7 +286,7 @@ policies/      random, heuristic, and exploit-specific policies
 evaluation/    baseline, curriculum, reward, robustness, benchmark, and oracle tools
 tests/         unit, invariant, randomized, and behavioral tests
 configs/       editable environment and reward configuration
-docs/          assessment brief and detailed technical evidence
+docs/          project overview and detailed technical evidence
 ```
 
 ## Scope
@@ -301,9 +304,7 @@ Implemented:
 - adversarial policies, multi-seed analysis, throughput profiling, and oracle regret
 - YAML configuration, text adapter, tests, and CI
 
-Deliberately excluded are RL training, multi-city routing, live booking APIs,
-and visualization. Those would substantially increase risk without
-strengthening the core environment-design argument.
-
-The original prompt is preserved in
-[`docs/assessment-brief.md`](docs/assessment-brief.md).
+The current scope deliberately excludes RL training, multi-city routing, live
+booking APIs, and visualization so the repository stays focused on a reliable,
+measurable environment. See [`docs/project-overview.md`](docs/project-overview.md)
+for the system goals, capabilities, and extension path.

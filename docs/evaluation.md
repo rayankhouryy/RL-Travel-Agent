@@ -132,7 +132,7 @@ zero:
 
 ## Throughput
 
-Measured locally with Python 3.9 on the assessment machine:
+Measured locally with Python 3.9 on a development workstation:
 
 ### Inventory scaling
 

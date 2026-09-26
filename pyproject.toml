@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "afterquery-travel-env"
+name = "rl-travel-agent"
 version = "0.1.0"
 description = "A Gymnasium environment for training and evaluating AI travel agents."
 requires-python = ">=3.9"
